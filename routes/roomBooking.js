@@ -4,16 +4,52 @@ import RoomBooking from '../models/RoomBooking.js';
 const router = express.Router();
 
 // POST - Create a new booking
+// router.post('/', async (req, res) => {
+//   try {
+//     const newBooking = new RoomBooking(req.body);
+//     await newBooking.save();
+//     res.status(201).json({ message: 'Room booked successfully' });
+//   } catch (error) {
+//     console.error('Error saving booking:', error);
+//     res.status(500).json({ error: 'Failed to save booking' });
+//   }
+// });
+
+// POST - Create a new booking with double-booking prevention
 router.post('/', async (req, res) => {
+  const { room, bookingDate, startTime, endTime } = req.body;
+
   try {
+    // Step 1: Check for overlapping bookings
+    const conflictingBooking = await RoomBooking.findOne({
+      room: room,
+      bookingDate: bookingDate, // same date
+      $or: [
+        {
+          startTime: { $lt: endTime }, // requested start < existing end
+          endTime: { $gt: startTime }, // requested end > existing start
+        }
+      ]
+    });
+
+    if (conflictingBooking) {
+      return res.status(409).json({
+        message: 'Room already booked for the selected date and time',
+        conflict: conflictingBooking
+      });
+    }
+
+    // Step 2: Save if no conflicts
     const newBooking = new RoomBooking(req.body);
     await newBooking.save();
     res.status(201).json({ message: 'Room booked successfully' });
+
   } catch (error) {
     console.error('Error saving booking:', error);
     res.status(500).json({ error: 'Failed to save booking' });
   }
 });
+
 
 // GET - All bookings (admin use)
 // GET - All bookings (admin or filtered user)
