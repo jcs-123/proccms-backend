@@ -205,19 +205,6 @@ router.post('/:id/user-remarks', async (req, res) => {
     res.status(500).json({ message: 'Failed to save user remarks' });
   }
 });
-// PUT /api/room-booking/:id/confirm
-router.put('/:id/confirm', async (req, res) => {
-  try {
-    const booking = await RoomBooking.findByIdAndUpdate(
-      req.params.id,
-      { status: 'Booked' },
-      { new: true }
-    );
-    res.json(booking);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to confirm booking' });
-  }
-});
 
 
 
