@@ -4,16 +4,34 @@ import RoomBooking from '../models/RoomBooking.js';
 const router = express.Router();
 
 // POST - Create a new booking
-router.post('/', async (req, res) => {
-  try {
-    const newBooking = new RoomBooking(req.body);
-    await newBooking.save();
-    res.status(201).json({ message: 'Room booked successfully' });
-  } catch (error) {
-    console.error('Error saving booking:', error);
-    res.status(500).json({ error: 'Failed to save booking' });
+// Booking Schema should store time as Date or time string
+
+router.post('/api/room-booking', async (req, res) => {
+  const { roomType, date, timeFrom, timeTo } = req.body;
+
+  // Convert date/time to Date objects if necessary
+  const fromTime = new Date(`${date} ${timeFrom}`);
+  const toTime = new Date(`${date} ${timeTo}`);
+
+  // Check for existing overlapping bookings
+  const existing = await Booking.findOne({
+    roomType,
+    date,
+    $or: [
+      { timeFrom: { $lt: toTime }, timeTo: { $gt: fromTime } }
+    ]
+  });
+
+  if (existing) {
+    return res.status(409).json({ message: "Room already booked for the selected time." });
   }
+
+  // Otherwise, save booking
+  const booking = new Booking(req.body);
+  await booking.save();
+  res.status(200).json({ message: "Booking successful" });
 });
+
 
 // GET - All bookings (admin use)
 // GET - All bookings (admin or filtered user)
