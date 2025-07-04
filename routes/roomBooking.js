@@ -6,9 +6,39 @@ const router = express.Router();
 // POST - Create a new booking
 router.post('/', async (req, res) => {
   try {
+    const {
+      roomType,
+      date,
+      timeFrom,
+      timeTo
+    } = req.body;
+
+    const newStart = timeToMinutes(timeFrom);
+    const newEnd = timeToMinutes(timeTo);
+
+    if (newStart >= newEnd) {
+      return res.status(400).json({ message: 'Invalid time range' });
+    }
+
+    // Fetch existing bookings for same room and date
+    const existingBookings = await RoomBooking.find({ roomType, date });
+
+    // Check for any overlap
+    const isOverlap = existingBookings.some(booking => {
+      const existingStart = timeToMinutes(booking.timeFrom);
+      const existingEnd = timeToMinutes(booking.timeTo);
+      return newStart < existingEnd && newEnd > existingStart;
+    });
+
+    if (isOverlap) {
+      return res.status(409).json({ message: 'Conflict: Room already booked during this time.' });
+    }
+
+    // Save booking if no conflict
     const newBooking = new RoomBooking(req.body);
     await newBooking.save();
     res.status(201).json({ message: 'Room booked successfully' });
+
   } catch (error) {
     console.error('Error saving booking:', error);
     res.status(500).json({ error: 'Failed to save booking' });
