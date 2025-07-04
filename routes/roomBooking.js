@@ -3,15 +3,19 @@ import RoomBooking from '../models/RoomBooking.js';
 
 const router = express.Router();
 
-// POST - Create a new booking
+// Utility to convert time to minutes
+function timeToMinutes(time) {
+  const [hours, minutes] = time.match(/\d+/g).map(Number);
+  const ampm = time.includes("PM") ? "PM" : "AM";
+  let hour = hours % 12;
+  if (ampm === "PM") hour += 12;
+  return hour * 60 + minutes;
+}
+
+// POST - Create new booking with time conflict check
 router.post('/', async (req, res) => {
   try {
-    const {
-      roomType,
-      date,
-      timeFrom,
-      timeTo
-    } = req.body;
+    const { roomType, date, timeFrom, timeTo } = req.body;
 
     const newStart = timeToMinutes(timeFrom);
     const newEnd = timeToMinutes(timeTo);
@@ -20,10 +24,7 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ message: 'Invalid time range' });
     }
 
-    // Fetch existing bookings for same room and date
     const existingBookings = await RoomBooking.find({ roomType, date });
-
-    // Check for any overlap
     const isOverlap = existingBookings.some(booking => {
       const existingStart = timeToMinutes(booking.timeFrom);
       const existingEnd = timeToMinutes(booking.timeTo);
@@ -34,7 +35,6 @@ router.post('/', async (req, res) => {
       return res.status(409).json({ message: 'Conflict: Room already booked during this time.' });
     }
 
-    // Save booking if no conflict
     const newBooking = new RoomBooking(req.body);
     await newBooking.save();
     res.status(201).json({ message: 'Room booked successfully' });
@@ -45,19 +45,14 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET - All bookings (admin use)
-// GET - All bookings (admin or filtered user)
+// GET - All bookings with filters
 router.get('/', async (req, res) => {
   const { requestFrom, department } = req.query;
 
   try {
     let query = {};
-    if (requestFrom) {
-      query.username = requestFrom;
-    }
-    if (department) {
-      query.department = department;
-    }
+    if (requestFrom) query.username = requestFrom;
+    if (department) query.department = department;
 
     const bookings = await RoomBooking.find(query).sort({ createdAt: -1 });
     res.json(bookings);
@@ -67,27 +62,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-
-// router.get('/', async (req, res) => {
-//   const { requestFrom } = req.query;
-
-//   try {
-//     let query = {};
-//     if (requestFrom) {
-//       query.username = requestFrom; // match on 'username' field
-//     }
-
-//     const bookings = await RoomBooking.find(query).sort({ createdAt: -1 });
-//     res.json(bookings);
-//   } catch (error) {
-//     console.error('Error fetching bookings:', error);
-//     res.status(500).json({ message: 'Error fetching bookings' });
-//   }
-// });
-
-
-
-// GET - Assigned bookings for a staff (via query)
+// GET - Staff assigned bookings
 router.get('/assigned', async (req, res) => {
   const { staff } = req.query;
   try {
@@ -99,7 +74,26 @@ router.get('/assigned', async (req, res) => {
   }
 });
 
-// PUT - Assign staff to booking
+// GET - All staff-related bookings
+router.get('/staff-all', async (req, res) => {
+  const { username } = req.query;
+  if (!username) return res.status(400).json({ message: 'Username required' });
+
+  try {
+    const bookings = await RoomBooking.find({
+      $or: [
+        { username: username },
+        { assignedStaff: username }
+      ]
+    }).sort({ createdAt: -1 });
+    res.json(bookings);
+  } catch (error) {
+    console.error('Error fetching staff-related bookings:', error);
+    res.status(500).json({ message: 'Failed to fetch bookings' });
+  }
+});
+
+// PUT - Assign staff
 router.put('/:id/assign-staff', async (req, res) => {
   const { staffName } = req.body;
   try {
@@ -108,7 +102,6 @@ router.put('/:id/assign-staff', async (req, res) => {
 
     booking.assignedStaff = staffName;
     await booking.save();
-
     res.status(200).json({ message: 'Staff assigned successfully' });
   } catch (error) {
     console.error('Error assigning staff:', error);
@@ -116,7 +109,7 @@ router.put('/:id/assign-staff', async (req, res) => {
   }
 });
 
-// PUT - Update full booking
+// PUT - Update booking
 router.put('/:id', async (req, res) => {
   try {
     const updatedBooking = await RoomBooking.findByIdAndUpdate(
@@ -132,27 +125,8 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({ message: 'Failed to update booking' });
   }
 });
-// In routes/roomBooking.js
 
-router.get('/staff-all', async (req, res) => {
-  const { username } = req.query;
-
-  if (!username) return res.status(400).json({ message: 'Username required' });
-
-  try {
-    const bookings = await RoomBooking.find({
-      $or: [
-        { username: username },        // Requested by the user
-        { assignedStaff: username }    // Assigned to the user
-      ]
-    }).sort({ createdAt: -1 });
-
-    res.json(bookings);
-  } catch (error) {
-    console.error('Error fetching staff-related bookings:', error);
-    res.status(500).json({ message: 'Failed to fetch bookings' });
-  }
-});
+// PUT - Update status by requester
 router.put('/update-status/:id', async (req, res) => {
   const { id } = req.params;
   const { status, username } = req.body;
@@ -161,7 +135,6 @@ router.put('/update-status/:id', async (req, res) => {
     const booking = await RoomBooking.findById(id);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-    // Allow status change only if the requester is the one updating
     if (booking.username !== username) {
       return res.status(403).json({ message: 'Unauthorized to update this booking' });
     }
@@ -175,7 +148,8 @@ router.put('/update-status/:id', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-// In your roomBooking routes
+
+// POST - Admin remarks
 router.post('/:id/admin-remarks', async (req, res) => {
   try {
     const booking = await RoomBooking.findById(req.params.id);
@@ -191,7 +165,7 @@ router.post('/:id/admin-remarks', async (req, res) => {
   }
 });
 
-
+// POST - User remarks
 router.post('/:id/user-remarks', async (req, res) => {
   try {
     const booking = await RoomBooking.findById(req.params.id);
@@ -206,8 +180,6 @@ router.post('/:id/user-remarks', async (req, res) => {
     res.status(500).json({ message: 'Failed to save user remarks' });
   }
 });
-
-
 
 export default router;
 
