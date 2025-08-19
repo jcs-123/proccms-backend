@@ -24,29 +24,42 @@ const upload = multer({ storage });
  */
 router.post("/", upload.single("file"), async (req, res) => {
   try {
-    const { username, description, isNewRequirement, role, department } = req.body;
-    const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
-
-     const newRequest = new RepairRequest({
+    const {
       username,
-      department,
       description,
       isNewRequirement,
       role,
-      phone,
-      email,
+      department,
+      phone,  // Make sure these are coming from req.body
+      email   // Make sure these are coming from req.body
+    } = req.body;
+
+    const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
+
+    const newRequest = new RepairRequest({
+      username,
+      department,
+      description,
+      isNewRequirement: isNewRequirement === 'true', // Ensure boolean conversion
+      role,
+      phone: phone || '', // Provide default if undefined
+      email: email || '', // Provide default if undefined
       fileUrl,
       status: "Pending",
       assignedTo: "",
     });
 
-
     const savedRequest = await newRequest.save();
     res.status(201).json(savedRequest);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("Error creating repair request:", err);
+    res.status(500).json({
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   }
 });
+
 
 /**
  * GET - Fetch repair requests based on user role
