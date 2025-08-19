@@ -127,11 +127,15 @@ router.patch("/:id", async (req, res) => {
       return res.status(404).json({ message: "Repair request not found" });
     }
 
-    const updateData = { ...req.body };
+    // Update with new data
+    const updated = await RepairRequest.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true }
+    );
 
-    // Completed date logic
-    // inside PATCH route after updating
-    if (updateData.status || updateData.assignedTo) {
+    // Send notification if status or assignedTo changed
+    if (req.body.status || req.body.assignedTo) {
       try {
         console.log("📨 Sending notification email...");
 
@@ -156,20 +160,21 @@ router.patch("/:id", async (req, res) => {
           subject: `Repair Request Update: ${updated.status}`,
           text: `Your request (${updated.description}) status is now ${updated.status}`,
           html: `<h3>Repair Request Update</h3>
-             <p><b>Status:</b> ${updated.status}</p>
-             <p><b>Assigned To:</b> ${updated.assignedTo || "Not yet assigned"}</p>`,
+                 <p><b>Status:</b> ${updated.status}</p>
+                 <p><b>Assigned To:</b> ${updated.assignedTo || "Not yet assigned"}</p>`,
         });
       } catch (mailErr) {
         console.error("⚠️ Email send failed:", mailErr.message);
       }
     }
 
-
     res.json(updated);
   } catch (err) {
+    console.error("❌ Update failed:", err);
     res.status(500).json({ message: "Update failed" });
   }
 });
+
 // In routes/repairRequests.js or similar
 router.patch('/:id/verify', async (req, res) => {
   try {
