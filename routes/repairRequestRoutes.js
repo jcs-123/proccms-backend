@@ -130,66 +130,40 @@ router.patch("/:id", async (req, res) => {
     const updateData = { ...req.body };
 
     // Completed date logic
-    if (updateData.status === "Completed" && existing.status !== "Completed") {
-      updateData.completedAt = new Date();
-    }
-    if (updateData.status !== "Completed" && existing.status === "Completed") {
-      updateData.completedAt = null;
-    }
-
-    const updated = await RepairRequest.findByIdAndUpdate(
-      req.params.id,
-      { $set: updateData },
-      { new: true }
-    );
-
-    // 🔔 Send email on status change or assignment
+    // inside PATCH route after updating
     if (updateData.status || updateData.assignedTo) {
       try {
-        // Get sender email (system email: project@jecc.ac.in)
+        console.log("📨 Sending notification email...");
+
         const systemEmail = "project@jecc.ac.in";
 
-        // Get user & staff emails
         const user = await User.findOne({ username: updated.username });
         const staff = await Staff.findOne({ username: updated.assignedTo });
+
+        console.log("   🔎 User email:", user?.email);
+        console.log("   🔎 Staff email:", staff?.email);
 
         const recipients = [
           user?.email,
           staff?.email,
-          systemEmail, // also send copy to project mail
+          systemEmail,
         ].filter(Boolean);
 
-        const subject = `Repair Request Update: ${updated.status}`;
-        const text = `Hello,
-
-Your repair request (${updated.description}) has been updated.
-
-Status: ${updated.status}
-Assigned To: ${updated.assignedTo || "Not yet assigned"}
-
-Regards,
-PROCCMS System`;
-
-        const html = `
-          <h3>Repair Request Update</h3>
-          <p><b>User:</b> ${updated.username}</p>
-          <p><b>Description:</b> ${updated.description}</p>
-          <p><b>Status:</b> ${updated.status}</p>
-          <p><b>Assigned To:</b> ${updated.assignedTo || "Not yet assigned"}</p>
-          <br>
-          <p>Sent by <b>PROCCMS</b></p>
-        `;
+        console.log("   📧 Final recipients:", recipients);
 
         await sendStatusMail({
           to: recipients,
-          subject,
-          text,
-          html,
+          subject: `Repair Request Update: ${updated.status}`,
+          text: `Your request (${updated.description}) status is now ${updated.status}`,
+          html: `<h3>Repair Request Update</h3>
+             <p><b>Status:</b> ${updated.status}</p>
+             <p><b>Assigned To:</b> ${updated.assignedTo || "Not yet assigned"}</p>`,
         });
       } catch (mailErr) {
         console.error("⚠️ Email send failed:", mailErr.message);
       }
     }
+
 
     res.json(updated);
   } catch (err) {
