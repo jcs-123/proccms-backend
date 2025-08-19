@@ -3,9 +3,6 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
-import { sendStatusMail } from "../utils/mailer.js";
-import User from "../models/User.js";
-import Staff from "../models/Staff.js";
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -127,50 +124,32 @@ router.patch("/:id", async (req, res) => {
       return res.status(404).json({ message: "Repair request not found" });
     }
 
-    // Update with new data
+    const updateData = { ...req.body };
+
+    if (
+      updateData.status &&
+      updateData.status === "Completed" &&
+      existing.status !== "Completed"
+    ) {
+      updateData.completedAt = new Date();
+    }
+
+    if (
+      updateData.status &&
+      updateData.status !== "Completed" &&
+      existing.status === "Completed"
+    ) {
+      updateData.completedAt = null;
+    }
+
     const updated = await RepairRequest.findByIdAndUpdate(
       req.params.id,
-      req.body,
+      { $set: updateData },
       { new: true }
     );
 
-    // Send notification if status or assignedTo changed
-    if (req.body.status || req.body.assignedTo) {
-      try {
-        console.log("📨 Sending notification email...");
-
-        const systemEmail = "project@jecc.ac.in";
-
-        const user = await User.findOne({ username: updated.username });
-        const staff = await Staff.findOne({ username: updated.assignedTo });
-
-        console.log("   🔎 User email:", user?.email);
-        console.log("   🔎 Staff email:", staff?.email);
-
-        const recipients = [
-          user?.email,
-          staff?.email,
-          systemEmail,
-        ].filter(Boolean);
-
-        console.log("   📧 Final recipients:", recipients);
-
-        await sendStatusMail({
-          to: recipients,
-          subject: `Repair Request Update: ${updated.status}`,
-          text: `Your request (${updated.description}) status is now ${updated.status}`,
-          html: `<h3>Repair Request Update</h3>
-                 <p><b>Status:</b> ${updated.status}</p>
-                 <p><b>Assigned To:</b> ${updated.assignedTo || "Not yet assigned"}</p>`,
-        });
-      } catch (mailErr) {
-        console.error("⚠️ Email send failed:", mailErr.message);
-      }
-    }
-
     res.json(updated);
   } catch (err) {
-    console.error("❌ Update failed:", err);
     res.status(500).json({ message: "Update failed" });
   }
 });
