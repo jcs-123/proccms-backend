@@ -3,8 +3,6 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
-import { sendStatusMail } from "../utils/mailer.js";
-import Staff from "../models/Staff.js";
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -17,33 +15,21 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-
 /**
  * POST - Create new repair request
  * Accepts optional file upload.
  */
 router.post("/", upload.single("file"), async (req, res) => {
   try {
-    const {
-      username,
-      description,
-      isNewRequirement,
-      role,
-      department,
-      phone,  // Make sure these are coming from req.body
-      email   // Make sure these are coming from req.body
-    } = req.body;
-
+    const { username, description, isNewRequirement, role, department } = req.body;
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
     const newRequest = new RepairRequest({
       username,
-      department,
+      department, // ✅ Add this
       description,
-      isNewRequirement: isNewRequirement === 'true', // Ensure boolean conversion
+      isNewRequirement,
       role,
-      phone: phone || '', // Provide default if undefined
-      email: email || '', // Provide default if undefined
       fileUrl,
       status: "Pending",
       assignedTo: "",
@@ -52,14 +38,9 @@ router.post("/", upload.single("file"), async (req, res) => {
     const savedRequest = await newRequest.save();
     res.status(201).json(savedRequest);
   } catch (err) {
-    console.error("Error creating repair request:", err);
-    res.status(500).json({
-      message: err.message,
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    res.status(500).json({ message: err.message });
   }
 });
-
 
 /**
  * GET - Fetch repair requests based on user role
@@ -145,7 +126,21 @@ router.patch("/:id", async (req, res) => {
 
     const updateData = { ...req.body };
 
-    // Status update logic...
+    if (
+      updateData.status &&
+      updateData.status === "Completed" &&
+      existing.status !== "Completed"
+    ) {
+      updateData.completedAt = new Date();
+    }
+
+    if (
+      updateData.status &&
+      updateData.status !== "Completed" &&
+      existing.status === "Completed"
+    ) {
+      updateData.completedAt = null;
+    }
 
     const updated = await RepairRequest.findByIdAndUpdate(
       req.params.id,
@@ -153,45 +148,11 @@ router.patch("/:id", async (req, res) => {
       { new: true }
     );
 
-    // Enhanced email sending with error handling
-    if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
-      try {
-        const staff = await Staff.findOne({ username: updateData.assignedTo });
-
-        if (staff?.email) {
-          const mailResponse = await sendStatusMail({
-            to: staff.email,
-            subject: "📌 New Repair Request Assigned",
-            html: `
-              <h2>New Repair Request Assigned</h2>
-              <p>Hello <b>${staff.name}</b>,</p>
-              <p>A new repair request has been assigned to you.</p>
-              <p><b>Request ID:</b> ${existing._id}</p>
-              <p><b>Description:</b> ${existing.description}</p>
-              <p><b>Department:</b> ${existing.department}</p>
-              <p>Please log in to the system to take action.</p>
-              <hr/>
-              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
-            `,
-          });
-
-          console.log("📧 Email sent successfully:", mailResponse.messageId);
-        } else {
-          console.warn("⚠️ Staff has no email address:", staff);
-        }
-      } catch (emailError) {
-        console.error("❌ Failed to send email:", emailError.message);
-        // Continue with the response even if email fails
-      }
-    }
-
     res.json(updated);
   } catch (err) {
-    console.error("Update failed:", err);
     res.status(500).json({ message: "Update failed" });
   }
 });
-
 
 // In routes/repairRequests.js or similar
 router.patch('/:id/verify', async (req, res) => {
