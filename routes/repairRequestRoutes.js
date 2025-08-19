@@ -3,6 +3,9 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
+import { sendStatusMail } from "../utils/mailer.js";
+import User from "../models/User.js";
+import Staff from "../models/Staff.js";
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -126,19 +129,11 @@ router.patch("/:id", async (req, res) => {
 
     const updateData = { ...req.body };
 
-    if (
-      updateData.status &&
-      updateData.status === "Completed" &&
-      existing.status !== "Completed"
-    ) {
+    // Completed date logic
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
       updateData.completedAt = new Date();
     }
-
-    if (
-      updateData.status &&
-      updateData.status !== "Completed" &&
-      existing.status === "Completed"
-    ) {
+    if (updateData.status !== "Completed" && existing.status === "Completed") {
       updateData.completedAt = null;
     }
 
@@ -148,12 +143,59 @@ router.patch("/:id", async (req, res) => {
       { new: true }
     );
 
+    // 🔔 Send email on status change or assignment
+    if (updateData.status || updateData.assignedTo) {
+      try {
+        // Get sender email (system email: project@jecc.ac.in)
+        const systemEmail = "project@jecc.ac.in";
+
+        // Get user & staff emails
+        const user = await User.findOne({ username: updated.username });
+        const staff = await Staff.findOne({ username: updated.assignedTo });
+
+        const recipients = [
+          user?.email,
+          staff?.email,
+          systemEmail, // also send copy to project mail
+        ].filter(Boolean);
+
+        const subject = `Repair Request Update: ${updated.status}`;
+        const text = `Hello,
+
+Your repair request (${updated.description}) has been updated.
+
+Status: ${updated.status}
+Assigned To: ${updated.assignedTo || "Not yet assigned"}
+
+Regards,
+PROCCMS System`;
+
+        const html = `
+          <h3>Repair Request Update</h3>
+          <p><b>User:</b> ${updated.username}</p>
+          <p><b>Description:</b> ${updated.description}</p>
+          <p><b>Status:</b> ${updated.status}</p>
+          <p><b>Assigned To:</b> ${updated.assignedTo || "Not yet assigned"}</p>
+          <br>
+          <p>Sent by <b>PROCCMS</b></p>
+        `;
+
+        await sendStatusMail({
+          to: recipients,
+          subject,
+          text,
+          html,
+        });
+      } catch (mailErr) {
+        console.error("⚠️ Email send failed:", mailErr.message);
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: "Update failed" });
   }
 });
-
 // In routes/repairRequests.js or similar
 router.patch('/:id/verify', async (req, res) => {
   try {
