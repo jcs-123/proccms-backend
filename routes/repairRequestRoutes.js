@@ -3,6 +3,8 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
+import { sendStatusMail } from "../utils/mailer.js";
+import Staff from "../models/Staff.js";
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -126,19 +128,12 @@ router.patch("/:id", async (req, res) => {
 
     const updateData = { ...req.body };
 
-    if (
-      updateData.status &&
-      updateData.status === "Completed" &&
-      existing.status !== "Completed"
-    ) {
+    // if status is updated to Completed
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
       updateData.completedAt = new Date();
     }
 
-    if (
-      updateData.status &&
-      updateData.status !== "Completed" &&
-      existing.status === "Completed"
-    ) {
+    if (updateData.status !== "Completed" && existing.status === "Completed") {
       updateData.completedAt = null;
     }
 
@@ -148,8 +143,33 @@ router.patch("/:id", async (req, res) => {
       { new: true }
     );
 
+    // ✅ If staff is assigned, send mail
+    if (updateData.assignedTo) {
+      const staff = await Staff.findOne({ username: updateData.assignedTo });
+
+      if (staff?.email) {
+        await sendStatusMail({
+          to: staff.email,
+          subject: "📌 New Repair Request Assigned",
+          text: `Dear ${staff.name}, you have been assigned a new repair request.`,
+          html: `
+            <h2>New Repair Request Assigned</h2>
+            <p>Hello <b>${staff.name}</b>,</p>
+            <p>A new repair request has been assigned to you.</p>
+            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Status:</b> ${updateData.status || existing.status}</p>
+            <p>Please log in to the system to take action.</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `,
+        });
+      }
+    }
+
     res.json(updated);
   } catch (err) {
+    console.error("Update failed:", err);
     res.status(500).json({ message: "Update failed" });
   }
 });

@@ -12,7 +12,6 @@ import gatePassRoutes from "./routes/gatePassRoutes.js";
 import vehicleRoutes from './routes/vehicleRoutes.js';
 import roomBookingRoutes from './routes/roomBooking.js';
 import adminDashboardRoutes from './routes/adminDashboard.js';
-import testMailRoutes from "./routes/testMail.js";
 
 
 
@@ -37,8 +36,6 @@ app.use("/api/gatepass", gatePassRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/room-booking', roomBookingRoutes);
 app.use('/api/admin',adminDashboardRoutes);
-
-app.use("/api/test", testMailRoutes);
 
 // Root
 app.get("/", (req, res) => {
