@@ -17,6 +17,7 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+
 /**
  * POST - Create new repair request
  * Accepts optional file upload.
@@ -26,16 +27,19 @@ router.post("/", upload.single("file"), async (req, res) => {
     const { username, description, isNewRequirement, role, department } = req.body;
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
-    const newRequest = new RepairRequest({
+     const newRequest = new RepairRequest({
       username,
-      department, // ✅ Add this
+      department,
       description,
       isNewRequirement,
       role,
+      phone,
+      email,
       fileUrl,
       status: "Pending",
       assignedTo: "",
     });
+
 
     const savedRequest = await newRequest.save();
     res.status(201).json(savedRequest);
@@ -128,14 +132,7 @@ router.patch("/:id", async (req, res) => {
 
     const updateData = { ...req.body };
 
-    // if status is updated to Completed
-    if (updateData.status === "Completed" && existing.status !== "Completed") {
-      updateData.completedAt = new Date();
-    }
-
-    if (updateData.status !== "Completed" && existing.status === "Completed") {
-      updateData.completedAt = null;
-    }
+    // Status update logic...
 
     const updated = await RepairRequest.findByIdAndUpdate(
       req.params.id,
@@ -143,27 +140,35 @@ router.patch("/:id", async (req, res) => {
       { new: true }
     );
 
-    // ✅ If staff is assigned, send mail
-    if (updateData.assignedTo) {
-      const staff = await Staff.findOne({ username: updateData.assignedTo });
+    // Enhanced email sending with error handling
+    if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
+      try {
+        const staff = await Staff.findOne({ username: updateData.assignedTo });
 
-      if (staff?.email) {
-        await sendStatusMail({
-          to: staff.email,
-          subject: "📌 New Repair Request Assigned",
-          text: `Dear ${staff.name}, you have been assigned a new repair request.`,
-          html: `
-            <h2>New Repair Request Assigned</h2>
-            <p>Hello <b>${staff.name}</b>,</p>
-            <p>A new repair request has been assigned to you.</p>
-            <p><b>Description:</b> ${existing.description}</p>
-            <p><b>Department:</b> ${existing.department}</p>
-            <p><b>Status:</b> ${updateData.status || existing.status}</p>
-            <p>Please log in to the system to take action.</p>
-            <hr/>
-            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
-          `,
-        });
+        if (staff?.email) {
+          const mailResponse = await sendStatusMail({
+            to: staff.email,
+            subject: "📌 New Repair Request Assigned",
+            html: `
+              <h2>New Repair Request Assigned</h2>
+              <p>Hello <b>${staff.name}</b>,</p>
+              <p>A new repair request has been assigned to you.</p>
+              <p><b>Request ID:</b> ${existing._id}</p>
+              <p><b>Description:</b> ${existing.description}</p>
+              <p><b>Department:</b> ${existing.department}</p>
+              <p>Please log in to the system to take action.</p>
+              <hr/>
+              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+            `,
+          });
+
+          console.log("📧 Email sent successfully:", mailResponse.messageId);
+        } else {
+          console.warn("⚠️ Staff has no email address:", staff);
+        }
+      } catch (emailError) {
+        console.error("❌ Failed to send email:", emailError.message);
+        // Continue with the response even if email fails
       }
     }
 
@@ -173,6 +178,7 @@ router.patch("/:id", async (req, res) => {
     res.status(500).json({ message: "Update failed" });
   }
 });
+
 
 // In routes/repairRequests.js or similar
 router.patch('/:id/verify', async (req, res) => {
