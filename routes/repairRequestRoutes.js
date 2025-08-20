@@ -312,13 +312,71 @@ router.patch("/:id", async (req, res) => {
   }
 });
 // In routes/repairRequests.js or similar
+// In routes/repairRequests.js
 router.patch('/:id/verify', async (req, res) => {
   try {
+    const existing = await RepairRequest.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Repair request not found" });
+    }
+
     const updated = await RepairRequest.findByIdAndUpdate(
       req.params.id,
       { isVerified: req.body.isVerified },
       { new: true }
     );
+
+    // ✅ Send email notification when request is verified
+    if (req.body.isVerified && !existing.isVerified) {
+      try {
+        // Email to project office
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in", // Project office email
+          subject: "✅ Repair Request Verified by Admin",
+          text: `Repair request ${existing._id} has been verified by an administrator.`,
+          html: `
+            <h2>Repair Request Verified</h2>
+            <p><strong>Request ID:</strong> ${existing._id}</p>
+            <p><strong>Requested By:</strong> ${existing.username}</p>
+            <p><strong>Department:</strong> ${existing.department}</p>
+            <p><strong>Description:</strong> ${existing.description}</p>
+            <p><strong>Completed By:</strong> ${existing.assignedTo || "Not assigned"}</p>
+            <p><strong>Completion Date:</strong> ${existing.completedAt ? new Date(existing.completedAt).toLocaleString() : "Not completed"}</p>
+            <p><strong>Verification Date:</strong> ${new Date().toLocaleString()}</p>
+            <p><strong>Verified By:</strong> Admin</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `
+        });
+
+        // Optional: Also notify the requester that their request was verified
+        if (existing.email) {
+          await sendStatusMail({
+            to: existing.email,
+            subject: "✅ Your Repair Request Has Been Verified",
+            text: `Your repair request has been verified by the administration.`,
+            html: `
+              <h2>Request Verified</h2>
+              <p>Hello <b>${existing.username}</b>,</p>
+              <p>Your repair request has been verified by the administration.</p>
+              <p><b>Request ID:</b> ${existing._id}</p>
+              <p><b>Description:</b> ${existing.description}</p>
+              <p><b>Status:</b> Verified</p>
+              <p><b>Verification Date:</b> ${new Date().toLocaleString()}</p>
+              <p>Thank you for using our service.</p>
+              <hr/>
+              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+            `
+          });
+        }
+
+        console.log("Verification email sent successfully");
+      } catch (emailError) {
+        console.error("Failed to send verification email:", emailError.message);
+        // Don't fail the request if email fails
+      }
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ message: err.message });
