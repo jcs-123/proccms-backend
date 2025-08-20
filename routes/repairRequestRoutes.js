@@ -5,17 +5,34 @@ import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
+import fs from 'fs'; // Add this import
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ✅ ADD THIS: Serve static files from uploads directory
+router.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 // Multer config for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, path.join(__dirname, "../uploads")),
+  destination: (req, file, cb) => {
+    // Create uploads directory if it doesn't exist
+    const uploadDir = path.join(__dirname, "../uploads");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
-const upload = multer({ storage });
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  }
+});
 
 /**
  * POST - Create new repair request
@@ -23,21 +40,47 @@ const upload = multer({ storage });
  */
 router.post("/", upload.single("file"), async (req, res) => {
   try {
-    const { username, description, isNewRequirement, role, department } = req.body;
+    const { username, description, isNewRequirement, role, department, email } = req.body;
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
     const newRequest = new RepairRequest({
       username,
-      department, // ✅ Add this
+      department,
       description,
       isNewRequirement,
       role,
+      email: email || '',
       fileUrl,
       status: "Pending",
       assignedTo: "",
     });
 
     const savedRequest = await newRequest.save();
+
+    // ✅ Send email to project when new request is created
+    try {
+      await sendStatusMail({
+        to: "sandraps@jecc.ac.in",
+        subject: "📋 New Repair Request Created",
+        text: `A new repair request has been created by ${username} from ${department}.`,
+        html: `
+          <h2>New Repair Request Created</h2>
+          <p><strong>Request ID:</strong> ${savedRequest._id}</p>
+          <p><strong>Requested By:</strong> ${username}</p>
+          <p><strong>Department:</strong> ${department}</p>
+          <p><strong>Description:</strong> ${description}</p>
+          <p><strong>Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
+          <p><strong>Status:</strong> Pending</p>
+          <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+          <hr/>
+          <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+        `
+      });
+    } catch (emailError) {
+      console.error("Failed to send creation email:", emailError.message);
+      // Don't fail the request if email fails
+    }
+
     res.status(201).json(savedRequest);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -143,11 +186,13 @@ router.patch("/:id", async (req, res) => {
       { new: true }
     );
 
-    // ✅ Send email when staff is assigned OR changed
+    // ✅ Send emails for different scenarios
     if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
-      const staff = await Staff.findOne({ name: updateData.assignedTo }); // Changed from username to name
+      // Assignment changed - notify staff, project, and requester
+      const staff = await Staff.findOne({ name: updateData.assignedTo });
 
       if (staff?.email) {
+        // Email to assigned staff
         await sendStatusMail({
           to: staff.email,
           subject: "📌 Repair Request Assigned to You",
@@ -157,35 +202,107 @@ router.patch("/:id", async (req, res) => {
             <p>Hello <b>${staff.name}</b>,</p>
             <p>A repair request has been assigned to you.</p>
             <p><b>Request ID:</b> ${existing._id}</p>
-            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Requested By:</b> ${existing.username}</p>
             <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Description:</b> ${existing.description}</p>
             <p><b>Status:</b> ${updateData.status || existing.status}</p>
             <p>Please log in to the system to take action.</p>
             <hr/>
             <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
           `,
         });
-        
-        // Also notify the previous assignee if assignment changed
-        if (existing.assignedTo && existing.assignedTo !== updateData.assignedTo) {
-          const previousStaff = await Staff.findOne({ name: existing.assignedTo });
-          if (previousStaff?.email) {
-            await sendStatusMail({
-              to: previousStaff.email,
-              subject: "🔁 Repair Request Reassigned",
-              text: `The repair request ${existing._id} has been reassigned to another staff member.`,
-              html: `
-                <h2>Request Reassigned</h2>
-                <p>Hello <b>${previousStaff.name}</b>,</p>
-                <p>The repair request <b>${existing._id}</b> has been reassigned to another staff member.</p>
-                <p><b>Description:</b> ${existing.description}</p>
-                <hr/>
-                <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
-              `,
-            });
-          }
+
+        // Email to project about assignment
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: "👤 Repair Request Assigned",
+          text: `Repair request ${existing._id} has been assigned to ${staff.name}.`,
+          html: `
+            <h2>Repair Request Assigned</h2>
+            <p><b>Request ID:</b> ${existing._id}</p>
+            <p><b>Assigned To:</b> ${staff.name}</p>
+            <p><b>Requested By:</b> ${existing.username}</p>
+            <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Status:</b> ${updateData.status || existing.status}</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `
+        });
+
+        // Email to requester about assignment
+        if (existing.email) {
+          await sendStatusMail({
+            to: existing.email,
+            subject: "🔄 Your Repair Request Has Been Assigned",
+            text: `Your repair request has been assigned to ${staff.name}.`,
+            html: `
+              <h2>Request Assigned</h2>
+              <p>Hello <b>${existing.username}</b>,</p>
+              <p>Your repair request has been assigned to a staff member.</p>
+              <p><b>Request ID:</b> ${existing._id}</p>
+              <p><b>Assigned To:</b> ${staff.name}</p>
+              <p><b>Description:</b> ${existing.description}</p>
+              <p><b>Status:</b> ${updateData.status || existing.status}</p>
+              <p>You will be notified when the request is completed.</p>
+              <hr/>
+              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+            `
+          });
         }
       }
+    }
+
+    // ✅ Send completion emails
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
+      // Request completed - notify requester and project
+      const completionEmails = [];
+
+      // Email to requester
+      if (existing.email) {
+        completionEmails.push(
+          sendStatusMail({
+            to: existing.email,
+            subject: "✅ Your Repair Request Has Been Completed",
+            text: `Your repair request has been completed.`,
+            html: `
+              <h2>Request Completed</h2>
+              <p>Hello <b>${existing.username}</b>,</p>
+              <p>Your repair request has been completed successfully.</p>
+              <p><b>Request ID:</b> ${existing._id}</p>
+              <p><b>Description:</b> ${existing.description}</p>
+              <p><b>Completed By:</b> ${existing.assignedTo || "Staff"}</p>
+              <p><b>Completion Date:</b> ${new Date().toLocaleString()}</p>
+              <p>Thank you for using our service.</p>
+              <hr/>
+              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+            `
+          })
+        );
+      }
+
+      // Email to project
+      completionEmails.push(
+        sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: "✅ Repair Request Completed",
+          text: `Repair request ${existing._id} has been completed.`,
+          html: `
+            <h2>Repair Request Completed</h2>
+            <p><b>Request ID:</b> ${existing._id}</p>
+            <p><b>Requested By:</b> ${existing.username}</p>
+            <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Completed By:</b> ${existing.assignedTo || "Staff"}</p>
+            <p><b>Completion Date:</b> ${new Date().toLocaleString()}</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `
+        })
+      );
+
+      // Send all completion emails
+      await Promise.all(completionEmails);
     }
 
     res.json(updated);
