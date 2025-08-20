@@ -3,6 +3,8 @@ import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
+import { sendStatusMail } from "../utils/mailer.js";
+import Staff from "../models/Staff.js";
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -126,19 +128,12 @@ router.patch("/:id", async (req, res) => {
 
     const updateData = { ...req.body };
 
-    if (
-      updateData.status &&
-      updateData.status === "Completed" &&
-      existing.status !== "Completed"
-    ) {
+    // if status is updated to Completed
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
       updateData.completedAt = new Date();
     }
 
-    if (
-      updateData.status &&
-      updateData.status !== "Completed" &&
-      existing.status === "Completed"
-    ) {
+    if (updateData.status !== "Completed" && existing.status === "Completed") {
       updateData.completedAt = null;
     }
 
@@ -148,12 +143,57 @@ router.patch("/:id", async (req, res) => {
       { new: true }
     );
 
+    // ✅ Send email when staff is assigned OR changed
+    if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
+      const staff = await Staff.findOne({ name: updateData.assignedTo }); // Changed from username to name
+
+      if (staff?.email) {
+        await sendStatusMail({
+          to: staff.email,
+          subject: "📌 Repair Request Assigned to You",
+          text: `Dear ${staff.name}, a repair request has been assigned to you.`,
+          html: `
+            <h2>Repair Request Assigned</h2>
+            <p>Hello <b>${staff.name}</b>,</p>
+            <p>A repair request has been assigned to you.</p>
+            <p><b>Request ID:</b> ${existing._id}</p>
+            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Status:</b> ${updateData.status || existing.status}</p>
+            <p>Please log in to the system to take action.</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `,
+        });
+        
+        // Also notify the previous assignee if assignment changed
+        if (existing.assignedTo && existing.assignedTo !== updateData.assignedTo) {
+          const previousStaff = await Staff.findOne({ name: existing.assignedTo });
+          if (previousStaff?.email) {
+            await sendStatusMail({
+              to: previousStaff.email,
+              subject: "🔁 Repair Request Reassigned",
+              text: `The repair request ${existing._id} has been reassigned to another staff member.`,
+              html: `
+                <h2>Request Reassigned</h2>
+                <p>Hello <b>${previousStaff.name}</b>,</p>
+                <p>The repair request <b>${existing._id}</b> has been reassigned to another staff member.</p>
+                <p><b>Description:</b> ${existing.description}</p>
+                <hr/>
+                <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+              `,
+            });
+          }
+        }
+      }
+    }
+
     res.json(updated);
   } catch (err) {
+    console.error("Update failed:", err);
     res.status(500).json({ message: "Update failed" });
   }
 });
-
 // In routes/repairRequests.js or similar
 router.patch('/:id/verify', async (req, res) => {
   try {
