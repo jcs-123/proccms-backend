@@ -146,6 +146,157 @@ router.post('/:id/remarks', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+router.patch("/:id", async (req, res) => {
+  try {
+    const existing = await RepairRequest.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Repair request not found" });
+    }
+
+    const updateData = { ...req.body };
+
+    // if status is updated to Completed
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
+      updateData.completedAt = new Date();
+    }
+
+    if (updateData.status !== "Completed" && existing.status === "Completed") {
+      updateData.completedAt = null;
+    }
+
+    const updated = await RepairRequest.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData },
+      { new: true }
+    );
+
+    // ✅ Send emails for different scenarios using standardized templates
+    if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
+      // Assignment changed - notify staff, project, and requester
+      const staff = await Staff.findOne({ name: updateData.assignedTo });
+
+      if (staff?.email) {
+        // Email to assigned staff
+        const staffEmail = EmailTemplates.assignedToStaff(updated, staff);
+        await sendStatusMail({
+          to: staff.email,
+          subject: staffEmail.subject,
+          text: `Dear ${staff.name}, a repair request has been assigned to you.`,
+          html: staffEmail.html,
+        });
+
+        // Email to project about assignment
+        const projectEmail = EmailTemplates.assignmentNotification(updated, staff);
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: projectEmail.subject,
+          text: `Repair request ${existing._id} has been assigned to ${staff.name}.`,
+          html: projectEmail.html
+        });
+
+        // Email to requester about assignment
+        if (existing.email) {
+          const requesterEmail = EmailTemplates.requesterAssignmentNotification(updated, staff);
+          await sendStatusMail({
+            to: existing.email,
+            subject: requesterEmail.subject,
+            text: `Your repair request has been assigned to ${staff.name}.`,
+            html: requesterEmail.html
+          });
+        }
+      }
+    }
+
+    // ✅ Send completion emails
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
+      // Request completed - notify requester and project
+      const completionEmails = [];
+
+      // Email to requester
+      if (existing.email) {
+        const requesterEmail = EmailTemplates.completionToRequester(updated);
+        completionEmails.push(
+          sendStatusMail({
+            to: existing.email,
+            subject: requesterEmail.subject,
+            text: `Your repair request has been completed.`,
+            html: requesterEmail.html
+          })
+        );
+      }
+
+      // Email to project
+      const projectEmail = EmailTemplates.completionToProject(updated);
+      completionEmails.push(
+        sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: projectEmail.subject,
+          text: `Repair request ${existing._id} has been completed.`,
+          html: projectEmail.html
+        })
+      );
+
+      // Send all completion emails
+      await Promise.all(completionEmails);
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error("Update failed:", err);
+    res.status(500).json({ message: "Update failed" });
+  }
+});
+
+// Verification endpoint
+router.patch('/:id/verify', async (req, res) => {
+  try {
+    const existing = await RepairRequest.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Repair request not found" });
+    }
+
+    const updated = await RepairRequest.findByIdAndUpdate(
+      req.params.id,
+      { isVerified: req.body.isVerified },
+      { new: true }
+    );
+
+    // ✅ Send email notification when request is verified
+    if (req.body.isVerified && !existing.isVerified) {
+      try {
+        // Email to project office
+        const projectEmail = EmailTemplates.verificationNotification(updated);
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: projectEmail.subject,
+          text: `Repair request ${existing._id} has been verified by an administrator.`,
+          html: projectEmail.html
+        });
+
+        // Optional: Also notify the requester that their request was verified
+        if (existing.email) {
+          const requesterEmail = EmailTemplates.verificationToRequester(updated);
+          await sendStatusMail({
+            to: existing.email,
+            subject: requesterEmail.subject,
+            text: `Your repair request has been verified by the administration.`,
+            html: requesterEmail.html
+          });
+        }
+
+        console.log("Verification email sent successfully");
+      } catch (emailError) {
+        console.error("Failed to send verification email:", emailError.message);
+        // Don't fail the request if email fails
+      }
+    }
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 router.get("/", async (req, res) => {
   const { username, role, department, search, status, assignedTo, dateFrom, dateTo } = req.query;
 
