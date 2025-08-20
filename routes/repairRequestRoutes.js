@@ -1,4 +1,3 @@
-// routes/repairRequests.js
 import express from "express";
 import multer from "multer";
 import path from "path";
@@ -6,48 +5,32 @@ import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
-import fs from 'fs';
-import { EmailTemplates } from "../utils/EmailTemplates.js";
+import fs from 'fs'; // Add this import
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ Serve static files from uploads directory - FIXED PATH
+// ✅ ADD THIS: Serve static files from uploads directory
 router.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Multer config for file uploads - UPDATED
+// Multer config for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    // Create uploads directory if it doesn't exist
     const uploadDir = path.join(__dirname, "../uploads");
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
     cb(null, uploadDir);
   },
-  filename: (req, file, cb) => {
-    // Sanitize filename to remove special characters
-    const originalname = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
-    cb(null, `${Date.now()}-${originalname}`);
-  },
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
 
 const upload = multer({
   storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    // Allow images and common document types
-    const allowedTypes = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype);
-
-    if (mimetype && extname) {
-      return cb(null, true);
-    } else {
-      cb(new Error('Only image and document files are allowed'));
-    }
   }
 });
 
@@ -57,14 +40,7 @@ const upload = multer({
  */
 router.post("/", upload.single("file"), async (req, res) => {
   try {
-    // Handle file upload error
-    if (req.fileValidationError) {
-      return res.status(400).json({ message: req.fileValidationError });
-    }
-
     const { username, description, isNewRequirement, role, department, email } = req.body;
-    
-    // Fix file URL path
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
     const newRequest = new RepairRequest({
@@ -83,12 +59,22 @@ router.post("/", upload.single("file"), async (req, res) => {
 
     // ✅ Send email to project when new request is created
     try {
-      const emailTemplate = EmailTemplates.newRequest(savedRequest);
       await sendStatusMail({
         to: "sandraps@jecc.ac.in",
-        subject: emailTemplate.subject,
+        subject: "📋 New Repair Request Created",
         text: `A new repair request has been created by ${username} from ${department}.`,
-        html: emailTemplate.html
+        html: `
+          <h2>New Repair Request Created</h2>
+          <p><strong>Request ID:</strong> ${savedRequest._id}</p>
+          <p><strong>Requested By:</strong> ${username}</p>
+          <p><strong>Department:</strong> ${department}</p>
+          <p><strong>Description:</strong> ${description}</p>
+          <p><strong>Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
+          <p><strong>Status:</strong> Pending</p>
+          <p><strong>Date:</strong> ${new Date().toLocaleString()}</p>
+          <hr/>
+          <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+        `
       });
     } catch (emailError) {
       console.error("Failed to send creation email:", emailError.message);
@@ -97,206 +83,16 @@ router.post("/", upload.single("file"), async (req, res) => {
 
     res.status(201).json(savedRequest);
   } catch (err) {
-    // Handle multer errors
-    if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ message: 'File too large. Maximum size is 5MB.' });
-      }
-    }
-    res.status(500).json({ message: err.message });
-  }
-});
-router.post('/:id/remarks', async (req, res) => {
-  try {
-    const { text, enteredBy } = req.body;
-
-    const updatedRequest = await RepairRequest.findByIdAndUpdate(
-      req.params.id,
-      {
-        $push: {
-          remarks: {
-            text,
-            enteredBy,
-            date: new Date()
-          }
-        }
-      },
-      { new: true }
-    );
-
-    // Send notification email about the new remark
-    if (updatedRequest.email) {
-      try {
-        const remark = updatedRequest.remarks[updatedRequest.remarks.length - 1];
-        const remarkEmail = EmailTemplates.newRemarkNotification(updatedRequest, remark);
-        
-        await sendStatusMail({
-          to: updatedRequest.email,
-          subject: remarkEmail.subject,
-          text: `A new remark has been added to your repair request.`,
-          html: remarkEmail.html
-        });
-      } catch (emailError) {
-        console.error("Failed to send remark notification email:", emailError.message);
-      }
-    }
-
-    res.json(updatedRequest);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-router.patch("/:id", async (req, res) => {
-  try {
-    const existing = await RepairRequest.findById(req.params.id);
-    if (!existing) {
-      return res.status(404).json({ message: "Repair request not found" });
-    }
-
-    const updateData = { ...req.body };
-
-    // if status is updated to Completed
-    if (updateData.status === "Completed" && existing.status !== "Completed") {
-      updateData.completedAt = new Date();
-    }
-
-    if (updateData.status !== "Completed" && existing.status === "Completed") {
-      updateData.completedAt = null;
-    }
-
-    const updated = await RepairRequest.findByIdAndUpdate(
-      req.params.id,
-      { $set: updateData },
-      { new: true }
-    );
-
-    // ✅ Send emails for different scenarios using standardized templates
-    if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
-      // Assignment changed - notify staff, project, and requester
-      const staff = await Staff.findOne({ name: updateData.assignedTo });
-
-      if (staff?.email) {
-        // Email to assigned staff
-        const staffEmail = EmailTemplates.assignedToStaff(updated, staff);
-        await sendStatusMail({
-          to: staff.email,
-          subject: staffEmail.subject,
-          text: `Dear ${staff.name}, a repair request has been assigned to you.`,
-          html: staffEmail.html,
-        });
-
-        // Email to project about assignment
-        const projectEmail = EmailTemplates.assignmentNotification(updated, staff);
-        await sendStatusMail({
-          to: "sandraps@jecc.ac.in",
-          subject: projectEmail.subject,
-          text: `Repair request ${existing._id} has been assigned to ${staff.name}.`,
-          html: projectEmail.html
-        });
-
-        // Email to requester about assignment
-        if (existing.email) {
-          const requesterEmail = EmailTemplates.requesterAssignmentNotification(updated, staff);
-          await sendStatusMail({
-            to: existing.email,
-            subject: requesterEmail.subject,
-            text: `Your repair request has been assigned to ${staff.name}.`,
-            html: requesterEmail.html
-          });
-        }
-      }
-    }
-
-    // ✅ Send completion emails
-    if (updateData.status === "Completed" && existing.status !== "Completed") {
-      // Request completed - notify requester and project
-      const completionEmails = [];
-
-      // Email to requester
-      if (existing.email) {
-        const requesterEmail = EmailTemplates.completionToRequester(updated);
-        completionEmails.push(
-          sendStatusMail({
-            to: existing.email,
-            subject: requesterEmail.subject,
-            text: `Your repair request has been completed.`,
-            html: requesterEmail.html
-          })
-        );
-      }
-
-      // Email to project
-      const projectEmail = EmailTemplates.completionToProject(updated);
-      completionEmails.push(
-        sendStatusMail({
-          to: "sandraps@jecc.ac.in",
-          subject: projectEmail.subject,
-          text: `Repair request ${existing._id} has been completed.`,
-          html: projectEmail.html
-        })
-      );
-
-      // Send all completion emails
-      await Promise.all(completionEmails);
-    }
-
-    res.json(updated);
-  } catch (err) {
-    console.error("Update failed:", err);
-    res.status(500).json({ message: "Update failed" });
-  }
-});
-
-// Verification endpoint
-router.patch('/:id/verify', async (req, res) => {
-  try {
-    const existing = await RepairRequest.findById(req.params.id);
-    if (!existing) {
-      return res.status(404).json({ message: "Repair request not found" });
-    }
-
-    const updated = await RepairRequest.findByIdAndUpdate(
-      req.params.id,
-      { isVerified: req.body.isVerified },
-      { new: true }
-    );
-
-    // ✅ Send email notification when request is verified
-    if (req.body.isVerified && !existing.isVerified) {
-      try {
-        // Email to project office
-        const projectEmail = EmailTemplates.verificationNotification(updated);
-        await sendStatusMail({
-          to: "sandraps@jecc.ac.in",
-          subject: projectEmail.subject,
-          text: `Repair request ${existing._id} has been verified by an administrator.`,
-          html: projectEmail.html
-        });
-
-        // Optional: Also notify the requester that their request was verified
-        if (existing.email) {
-          const requesterEmail = EmailTemplates.verificationToRequester(updated);
-          await sendStatusMail({
-            to: existing.email,
-            subject: requesterEmail.subject,
-            text: `Your repair request has been verified by the administration.`,
-            html: requesterEmail.html
-          });
-        }
-
-        console.log("Verification email sent successfully");
-      } catch (emailError) {
-        console.error("Failed to send verification email:", emailError.message);
-        // Don't fail the request if email fails
-      }
-    }
-
-    res.json(updated);
-  } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
 
+/**
+ * GET - Fetch repair requests based on user role
+ * Admin: gets all
+ * Staff: gets assignedTo=username
+ * User: gets their own requests
+ */
 router.get("/", async (req, res) => {
   const { username, role, department, search, status, assignedTo, dateFrom, dateTo } = req.query;
 
@@ -362,6 +158,231 @@ router.put("/:id", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+/**
+ * PATCH - Partial update: used to assign staff or update status
+ */
+router.patch("/:id", async (req, res) => {
+  try {
+    const existing = await RepairRequest.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Repair request not found" });
+    }
+
+    const updateData = { ...req.body };
+
+    // if status is updated to Completed
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
+      updateData.completedAt = new Date();
+    }
+
+    if (updateData.status !== "Completed" && existing.status === "Completed") {
+      updateData.completedAt = null;
+    }
+
+    const updated = await RepairRequest.findByIdAndUpdate(
+      req.params.id,
+      { $set: updateData },
+      { new: true }
+    );
+
+    // ✅ Send emails for different scenarios
+    if (updateData.assignedTo && updateData.assignedTo !== existing.assignedTo) {
+      // Assignment changed - notify staff, project, and requester
+      const staff = await Staff.findOne({ name: updateData.assignedTo });
+
+      if (staff?.email) {
+        // Email to assigned staff
+        await sendStatusMail({
+          to: staff.email,
+          subject: "📌 Repair Request Assigned to You",
+          text: `Dear ${staff.name}, a repair request has been assigned to you.`,
+          html: `
+            <h2>Repair Request Assigned</h2>
+            <p>Hello <b>${staff.name}</b>,</p>
+            <p>A repair request has been assigned to you.</p>
+            <p><b>Request ID:</b> ${existing._id}</p>
+            <p><b>Requested By:</b> ${existing.username}</p>
+            <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Status:</b> ${updateData.status || existing.status}</p>
+            <p>Please log in to the system to take action.</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `,
+        });
+
+        // Email to project about assignment
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: "👤 Repair Request Assigned",
+          text: `Repair request ${existing._id} has been assigned to ${staff.name}.`,
+          html: `
+            <h2>Repair Request Assigned</h2>
+            <p><b>Request ID:</b> ${existing._id}</p>
+            <p><b>Assigned To:</b> ${staff.name}</p>
+            <p><b>Requested By:</b> ${existing.username}</p>
+            <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Status:</b> ${updateData.status || existing.status}</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `
+        });
+
+        // Email to requester about assignment
+        if (existing.email) {
+          await sendStatusMail({
+            to: existing.email,
+            subject: "🔄 Your Repair Request Has Been Assigned",
+            text: `Your repair request has been assigned to ${staff.name}.`,
+            html: `
+              <h2>Request Assigned</h2>
+              <p>Hello <b>${existing.username}</b>,</p>
+              <p>Your repair request has been assigned to a staff member.</p>
+              <p><b>Request ID:</b> ${existing._id}</p>
+              <p><b>Assigned To:</b> ${staff.name}</p>
+              <p><b>Description:</b> ${existing.description}</p>
+              <p><b>Status:</b> ${updateData.status || existing.status}</p>
+              <p>You will be notified when the request is completed.</p>
+              <hr/>
+              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+            `
+          });
+        }
+      }
+    }
+
+    // ✅ Send completion emails
+    if (updateData.status === "Completed" && existing.status !== "Completed") {
+      // Request completed - notify requester and project
+      const completionEmails = [];
+
+      // Email to requester
+      if (existing.email) {
+        completionEmails.push(
+          sendStatusMail({
+            to: existing.email,
+            subject: "✅ Your Repair Request Has Been Completed",
+            text: `Your repair request has been completed.`,
+            html: `
+              <h2>Request Completed</h2>
+              <p>Hello <b>${existing.username}</b>,</p>
+              <p>Your repair request has been completed successfully.</p>
+              <p><b>Request ID:</b> ${existing._id}</p>
+              <p><b>Description:</b> ${existing.description}</p>
+              <p><b>Completed By:</b> ${existing.assignedTo || "Staff"}</p>
+              <p><b>Completion Date:</b> ${new Date().toLocaleString()}</p>
+              <p>Thank you for using our service.</p>
+              <hr/>
+              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+            `
+          })
+        );
+      }
+
+      // Email to project
+      completionEmails.push(
+        sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: "✅ Repair Request Completed",
+          text: `Repair request ${existing._id} has been completed.`,
+          html: `
+            <h2>Repair Request Completed</h2>
+            <p><b>Request ID:</b> ${existing._id}</p>
+            <p><b>Requested By:</b> ${existing.username}</p>
+            <p><b>Department:</b> ${existing.department}</p>
+            <p><b>Description:</b> ${existing.description}</p>
+            <p><b>Completed By:</b> ${existing.assignedTo || "Staff"}</p>
+            <p><b>Completion Date:</b> ${new Date().toLocaleString()}</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `
+        })
+      );
+
+      // Send all completion emails
+      await Promise.all(completionEmails);
+    }
+
+    res.json(updated);
+  } catch (err) {
+    console.error("Update failed:", err);
+    res.status(500).json({ message: "Update failed" });
+  }
+});
+// In routes/repairRequests.js or similar
+// In routes/repairRequests.js
+router.patch('/:id/verify', async (req, res) => {
+  try {
+    const existing = await RepairRequest.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Repair request not found" });
+    }
+
+    const updated = await RepairRequest.findByIdAndUpdate(
+      req.params.id,
+      { isVerified: req.body.isVerified },
+      { new: true }
+    );
+
+    // ✅ Send email notification when request is verified
+    if (req.body.isVerified && !existing.isVerified) {
+      try {
+        // Email to project office
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in", // Project office email
+          subject: "✅ Repair Request Verified by Admin",
+          text: `Repair request ${existing._id} has been verified by an administrator.`,
+          html: `
+            <h2>Repair Request Verified</h2>
+            <p><strong>Request ID:</strong> ${existing._id}</p>
+            <p><strong>Requested By:</strong> ${existing.username}</p>
+            <p><strong>Department:</strong> ${existing.department}</p>
+            <p><strong>Description:</strong> ${existing.description}</p>
+            <p><strong>Completed By:</strong> ${existing.assignedTo || "Not assigned"}</p>
+            <p><strong>Completion Date:</strong> ${existing.completedAt ? new Date(existing.completedAt).toLocaleString() : "Not completed"}</p>
+            <p><strong>Verification Date:</strong> ${new Date().toLocaleString()}</p>
+            <p><strong>Verified By:</strong> Admin</p>
+            <hr/>
+            <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+          `
+        });
+
+        // Optional: Also notify the requester that their request was verified
+        if (existing.email) {
+          await sendStatusMail({
+            to: existing.email,
+            subject: "✅ Your Repair Request Has Been Verified",
+            text: `Your repair request has been verified by the administration.`,
+            html: `
+              <h2>Request Verified</h2>
+              <p>Hello <b>${existing.username}</b>,</p>
+              <p>Your repair request has been verified by the administration.</p>
+              <p><b>Request ID:</b> ${existing._id}</p>
+              <p><b>Description:</b> ${existing.description}</p>
+              <p><b>Status:</b> Verified</p>
+              <p><b>Verification Date:</b> ${new Date().toLocaleString()}</p>
+              <p>Thank you for using our service.</p>
+              <hr/>
+              <p style="font-size:12px;color:gray">This is an automated email from PROCCMS.</p>
+            `
+          });
+        }
+
+        console.log("Verification email sent successfully");
+      } catch (emailError) {
+        console.error("Failed to send verification email:", emailError.message);
+        // Don't fail the request if email fails
+      }
+    }
+
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+// Add remarks to a repair request
 router.post('/:id/remarks', async (req, res) => {
   try {
     const { text, enteredBy } = req.body;
@@ -451,5 +472,8 @@ router.patch('/:requestId/remarks/:remarkId/mark-seen', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+
+
+
 export default router;
-// ... rest of your routes remain the same
