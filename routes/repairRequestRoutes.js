@@ -5,20 +5,22 @@ import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
-import fs from 'fs'; // Add this import
+import fs from 'fs';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ ADD THIS: Serve static files from uploads directory
-router.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// ✅ Define uploadDir first (this fixes the ReferenceError)
+const uploadDir = path.join(__dirname, "../uploads");
+
+// ✅ Serve static files from uploads directory
+router.use('/uploads', express.static(uploadDir));
 
 // Multer config for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     // Create uploads directory if it doesn't exist
-    const uploadDir = path.join(__dirname, "../uploads");
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -60,7 +62,7 @@ router.post("/", upload.single("file"), async (req, res) => {
     // ✅ Send email to project when new request is created
     try {
       await sendStatusMail({
-        to: "sandraps@jecc.ac.in",
+        to: "project@jecc.ac.in",
         subject: "📋 New Repair Request Created",
         text: `A new repair request has been created by ${username} from ${department}.`,
         html: `
@@ -214,7 +216,7 @@ router.patch("/:id", async (req, res) => {
 
         // Email to project about assignment
         await sendStatusMail({
-          to: "sandraps@jecc.ac.in",
+          to: "project@jecc.ac.in",
           subject: "👤 Repair Request Assigned",
           text: `Repair request ${existing._id} has been assigned to ${staff.name}.`,
           html: `
@@ -284,7 +286,7 @@ router.patch("/:id", async (req, res) => {
       // Email to project
       completionEmails.push(
         sendStatusMail({
-          to: "sandraps@jecc.ac.in",
+          to: "project@jecc.ac.in",
           subject: "✅ Repair Request Completed",
           text: `Repair request ${existing._id} has been completed.`,
           html: `
@@ -331,7 +333,7 @@ router.patch('/:id/verify', async (req, res) => {
       try {
         // Email to project office
         await sendStatusMail({
-          to: "sandraps@jecc.ac.in", // Project office email
+          to: "project@jecc.ac.in", // Project office email
           subject: "✅ Repair Request Verified by Admin",
           text: `Repair request ${existing._id} has been verified by an administrator.`,
           html: `
