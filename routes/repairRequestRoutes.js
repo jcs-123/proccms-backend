@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
-import fs from 'fs'; // Add this import
+import fs from "fs";
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
