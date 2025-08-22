@@ -12,7 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // ✅ ADD THIS: Serve static files from uploads directory
-router.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
 
 // Multer config for file uploads
 const storage = multer.diskStorage({
