@@ -7,13 +7,11 @@ import { fileURLToPath } from "url";
 
 import staffRoutes from './routes/staffRoutes.js';
 import authRoutes from './routes/authRoutes.js';
-import repairRequestRoutes from './routes/repairRequestRoutes.js'; // ✅ NEW
+import repairRequestRoutes from './routes/repairRequestRoutes.js';
 import gatePassRoutes from "./routes/gatePassRoutes.js";
 import vehicleRoutes from './routes/vehicleRoutes.js';
 import roomBookingRoutes from './routes/roomBooking.js';
 import adminDashboardRoutes from './routes/adminDashboard.js';
-
-
 
 dotenv.config();
 
@@ -25,17 +23,17 @@ const __dirname = path.dirname(__filename);
 app.use(cors());
 app.use(express.json());
 
-// Serve uploaded files
+// ✅ FIX: Serve static files from uploads directory - This is the critical fix
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // Routes
 app.use('/api/staff', staffRoutes);
 app.use('/api/auth', authRoutes);
-app.use('/api/repair-requests', repairRequestRoutes); // ✅ NEW
+app.use('/api/repair-requests', repairRequestRoutes);
 app.use("/api/gatepass", gatePassRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/room-booking', roomBookingRoutes);
-app.use('/api/admin',adminDashboardRoutes);
+app.use('/api/admin', adminDashboardRoutes);
 
 // Root
 app.get("/", (req, res) => {
