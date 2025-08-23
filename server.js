@@ -13,6 +13,7 @@ import vehicleRoutes from './routes/vehicleRoutes.js';
 import roomBookingRoutes from './routes/roomBooking.js';
 import adminDashboardRoutes from './routes/adminDashboard.js';
 import errorHandler from './middleware/errorMiddleware.js';
+import createUploadsDir from './utils/createUploadsDir.js';
 
 dotenv.config();
 
@@ -20,12 +21,21 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Create uploads directory on server start
+createUploadsDir();
+
 // Middleware
 app.use(cors());
 app.use(express.json());
 
 // Serve uploaded files - THIS IS CRUCIAL FOR IMAGE PERSISTENCE
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// Logging middleware to track file access
+app.use("/uploads", (req, res, next) => {
+  console.log(`📁 File access: ${req.url}`);
+  next();
+});
 
 // Routes
 app.use('/api/staff', staffRoutes);
@@ -42,6 +52,21 @@ app.use(errorHandler);
 // Root
 app.get("/", (req, res) => {
   res.send("PROCCMS Backend is running");
+});
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  const uploadsDir = path.join(__dirname, "uploads");
+  const uploadsExists = fs.existsSync(uploadsDir);
+  
+  res.json({
+    status: "OK",
+    uploadsDirectory: {
+      exists: uploadsExists,
+      path: uploadsDir,
+      writable: uploadsExists ? true : false
+    }
+  });
 });
 
 // MongoDB connection
@@ -65,4 +90,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📁 Upload directory: ${path.join(__dirname, "uploads")}`);
+  console.log(`🌐 Access files at: http://localhost:${PORT}/uploads/`);
 });

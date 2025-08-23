@@ -1,18 +1,15 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import createUploadsDir from "../utils/createUploadsDir.js";
+
+// Ensure uploads directory exists
+const uploadsDir = createUploadsDir();
 
 // Configure storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(process.cwd(), "uploads");
-    
-    // Create directory if it doesn't exist with proper permissions
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true, mode: 0o755 });
-    }
-    
-    cb(null, uploadDir);
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     // Create a unique filename with original extension
@@ -52,6 +49,11 @@ const handleMulterError = (err, req, res, next) => {
       return res.status(400).json({ message: 'File too large. Maximum size is 5MB.' });
     }
   }
+  
+  if (err.message === 'Invalid file type. Only images and documents are allowed.') {
+    return res.status(400).json({ message: err.message });
+  }
+  
   next(err);
 };
 

@@ -62,6 +62,13 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
     const { username, description, isNewRequirement, role, department, email } = req.body;
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
+    console.log('📁 File upload details:', {
+      originalName: req.file?.originalname,
+      savedAs: req.file?.filename,
+      fileUrl: fileUrl,
+      fileSize: req.file?.size
+    });
+
     const newRequest = new RepairRequest({
       username,
       department,
@@ -86,6 +93,7 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
           <p><strong>Department:</strong> ${department}</p>
           <p><strong>Request Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
           <p><strong>Description:</strong> ${description}</p>
+          ${fileUrl ? `<p><strong>Attachment:</strong> <a href="${process.env.BASE_URL || 'http://localhost:5000'}${fileUrl}">View File</a></p>` : ''}
           <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
           <p><strong>Submission Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
         </div>
@@ -105,6 +113,7 @@ router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
 
     res.status(201).json(savedRequest);
   } catch (err) {
+    console.error("Error creating repair request:", err);
     res.status(500).json({ message: err.message });
   }
 });
@@ -167,6 +176,10 @@ router.get("/", async (req, res) => {
         if (requestObj.fileUrl) {
           const filePath = path.join(process.cwd(), requestObj.fileUrl);
           requestObj.fileExists = fs.existsSync(filePath);
+          
+          if (!requestObj.fileExists) {
+            console.warn(`⚠️ File not found: ${filePath}`);
+          }
         }
         return requestObj;
       })
@@ -174,6 +187,7 @@ router.get("/", async (req, res) => {
     
     res.json(requestsWithFileCheck);
   } catch (err) {
+    console.error("Error fetching repair requests:", err);
     res.status(500).json({ message: "Failed to get repair requests" });
   }
 });
@@ -518,7 +532,6 @@ router.patch('/:requestId/remarks/:remarkId/mark-seen', async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
-});
-// ... (rest of your routes remain the same, just add handleMulterError where needed)
+});// ... (rest of your routes remain similar but add proper error handling)
 
 export default router;
