@@ -1,44 +1,12 @@
 import express from "express";
-import multer from "multer";
-import path from "path";
-import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
+import { upload, handleMulterError } from "../middleware/uploadMiddleware.js";
 import fs from "fs";
+import path from "path";
 
 const router = express.Router();
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// ✅ ADD THIS: Serve static files from uploads directory
-
-
-// Multer config for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads");
-    
-    // Create directory if it doesn't exist with proper permissions
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true, mode: 0o755 });
-    }
-    
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Create a unique filename with original extension
-    const ext = path.extname(file.originalname);
-    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
-    cb(null, filename);
-  },
-});
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  }
-});
 
 // Email template function for consistency
 const getEmailTemplate = (title, content) => {
@@ -89,7 +57,7 @@ const getEmailTemplate = (title, content) => {
  * POST - Create new repair request
  * Accepts optional file upload.
  */
-router.post("/", upload.single("file"), async (req, res) => {
+router.post("/", upload.single("file"), handleMulterError, async (req, res) => {
   try {
     const { username, description, isNewRequirement, role, department, email } = req.body;
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
@@ -191,15 +159,25 @@ router.get("/", async (req, res) => {
 
   try {
     const requests = await RepairRequest.find(filter).sort({ createdAt: -1 });
-    res.json(requests);
+    
+    // Verify file existence for each request
+    const requestsWithFileCheck = await Promise.all(
+      requests.map(async (request) => {
+        const requestObj = request.toObject();
+        if (requestObj.fileUrl) {
+          const filePath = path.join(process.cwd(), requestObj.fileUrl);
+          requestObj.fileExists = fs.existsSync(filePath);
+        }
+        return requestObj;
+      })
+    );
+    
+    res.json(requestsWithFileCheck);
   } catch (err) {
     res.status(500).json({ message: "Failed to get repair requests" });
   }
 });
 
-/**
- * PUT - Full update of repair request (rarely used)
- */
 router.put("/:id", async (req, res) => {
   try {
     const updatedRequest = await RepairRequest.findByIdAndUpdate(
@@ -541,5 +519,6 @@ router.patch('/:requestId/remarks/:remarkId/mark-seen', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+// ... (rest of your routes remain the same, just add handleMulterError where needed)
 
 export default router;
