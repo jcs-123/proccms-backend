@@ -11,19 +11,19 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ ADD THIS: Serve static files from uploads directory
+
 
 
 // Multer config for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadDir = path.join(__dirname, "../uploads");
-
+    
     // Create directory if it doesn't exist with proper permissions
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true, mode: 0o755 });
     }
-
+    
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
@@ -93,9 +93,7 @@ router.post("/", upload.single("file"), async (req, res) => {
   try {
     const { username, description, isNewRequirement, role, department, email } = req.body;
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
-    // In your repairRequestRoutes.js, add this to the POST endpoint:
-    console.log("File saved at:", path.join(__dirname, "../uploads", req.file.filename));
-    console.log("File URL will be:", `/uploads/${req.file.filename}`);
+
     const newRequest = new RepairRequest({
       username,
       department,
