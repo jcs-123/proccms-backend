@@ -5,40 +5,54 @@ import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
-import fs from "fs";
+import fs from 'fs';
+import { v2 as cloudinary } from 'cloudinary';
+import stream from 'stream';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-
-
-
-// Multer config for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads");
-    
-    // Create directory if it doesn't exist with proper permissions
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true, mode: 0o755 });
-    }
-    
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Create a unique filename with original extension
-    const ext = path.extname(file.originalname);
-    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
-    cb(null, filename);
-  },
+// Cloudinary configuration
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
+
+// Multer config for memory storage (no disk storage needed)
+const storage = multer.memoryStorage();
 const upload = multer({
   storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
   }
 });
+
+// Function to upload to Cloudinary
+const uploadToCloudinary = (file) => {
+  return new Promise((resolve, reject) => {
+    // Create a stream from buffer
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'repair-requests',
+        resource_type: 'auto'
+      },
+      (error, result) => {
+        if (error) {
+          reject(error);
+        } else {
+          resolve(result);
+        }
+      }
+    );
+
+    // Create a buffer stream and pipe to Cloudinary
+    const bufferStream = new stream.PassThrough();
+    bufferStream.end(file.buffer);
+    bufferStream.pipe(uploadStream);
+  });
+};
 
 // Email template function for consistency
 const getEmailTemplate = (title, content) => {
@@ -87,12 +101,23 @@ const getEmailTemplate = (title, content) => {
 
 /**
  * POST - Create new repair request
- * Accepts optional file upload.
+ * Accepts optional file upload to Cloudinary.
  */
 router.post("/", upload.single("file"), async (req, res) => {
   try {
     const { username, description, isNewRequirement, role, department, email } = req.body;
-    const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
+    let fileUrl = "";
+
+    // Upload file to Cloudinary if exists
+    if (req.file) {
+      try {
+        const result = await uploadToCloudinary(req.file);
+        fileUrl = result.secure_url;
+      } catch (uploadError) {
+        console.error("Cloudinary upload error:", uploadError);
+        return res.status(500).json({ message: "File upload failed" });
+      }
+    }
 
     const newRequest = new RepairRequest({
       username,
@@ -140,13 +165,6 @@ router.post("/", upload.single("file"), async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
-
-/**
- * GET - Fetch repair requests based on user role
- * Admin: gets all
- * Staff: gets assignedTo=username
- * User: gets their own requests
- */
 router.get("/", async (req, res) => {
   const { username, role, department, search, status, assignedTo, dateFrom, dateTo } = req.query;
 
@@ -541,5 +559,7 @@ router.patch('/:requestId/remarks/:remarkId/mark-seen', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+// ... (rest of your routes remain the same, no changes needed)
 
 export default router;
