@@ -452,68 +452,42 @@ router.patch('/:id/verify', async (req, res) => {
 });
 
 // Add remarks to a repair request
-// Add remarks to a repair request
+// remarks route
 router.post('/:id/remarks', async (req, res) => {
   try {
-    const { text, enteredBy } = req.body;
+    const { text, enteredBy, role } = req.body;
 
-    // 1️⃣ Find existing request
     const existing = await RepairRequest.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ message: "Repair request not found" });
     }
 
-    // 2️⃣ Push new remark
-    existing.remarks.push({
-      text,
-      enteredBy,
-      date: new Date()
-    });
+    existing.remarks.push({ text, enteredBy, date: new Date() });
 
-    // 3️⃣ If remark entered by Admin → update status
     let statusChanged = false;
-    if (enteredBy.toLowerCase().includes("admin")) {
-      existing.status = "Refer Remark";   // force backend status update
+    if (role && role.toLowerCase() === "admin") {
+      existing.status = "Refer Remark";
       statusChanged = true;
     }
 
-    // Save updated request
     const updatedRequest = await existing.save();
 
-    // 4️⃣ If Admin remark → send email to requester
     if (statusChanged && existing.email) {
-      const requesterEmailContent = `
-        <p>Dear <strong>${existing.username}</strong>,</p>
-        <p>An administrator has added a new remark regarding your repair request.</p>
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
-          <p><strong>Request ID:</strong> ${existing._id}</p>
-          <p><strong>Description:</strong> ${existing.description}</p>
-          <p><strong>New Remark:</strong> ${text}</p>
-          <p><strong>Status:</strong> <span class="status-badge refer">Refer Remark</span></p>
-          <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
-        </div>
-        <p>Please log in to PROCCMS to view the details.</p>
-      `;
+      try {
+        console.log("📩 Sending remark email to:", existing.email);
 
-      await sendStatusMail({
-        to: existing.email,
-        subject: "📌 Remark Added to Your Request - PROCCMS",
-        text: `Admin has added a new remark on your repair request ${existing._id}: ${text}`,
-        html: getEmailTemplate("New Remark Added", requesterEmailContent)
-      });
-
-      // (Optional) CC to project office
-      await sendStatusMail({
-        to: "sandraps@jecc.ac.in",
-        subject: "📌 Admin Added a Remark - PROCCMS",
-        text: `Admin added a remark on request ${existing._id}: ${text}`,
-        html: getEmailTemplate("Admin Remark Added", requesterEmailContent)
-      });
+        await sendStatusMail({
+          to: existing.email,
+          subject: "📌 Remark Added to Your Request - PROCCMS",
+          text: `Admin has added a new remark on your repair request ${existing._id}: ${text}`,
+          html: getEmailTemplate("New Remark Added", requesterEmailContent)
+        });
+      } catch (err) {
+        console.error("❌ Failed to send remark email:", err.message);
+      }
     }
 
-    // 5️⃣ Respond back to frontend
     res.json(updatedRequest);
-
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
