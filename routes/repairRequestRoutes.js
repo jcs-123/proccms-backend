@@ -452,23 +452,54 @@ router.patch('/:id/verify', async (req, res) => {
 });
 
 // Add remarks to a repair request
+// Add remarks to a repair request
 router.post('/:id/remarks', async (req, res) => {
   try {
     const { text, enteredBy } = req.body;
 
-    const updatedRequest = await RepairRequest.findByIdAndUpdate(
-      req.params.id,
-      {
-        $push: {
-          remarks: {
-            text,
-            enteredBy,
-            date: new Date()
-          }
-        }
-      },
-      { new: true }
-    );
+    const existing = await RepairRequest.findById(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ message: "Repair request not found" });
+    }
+
+    // Push new remark
+    existing.remarks.push({
+      text,
+      enteredBy,
+      date: new Date()
+    });
+
+    // If remark entered by admin → update status
+    let statusChanged = false;
+    if (enteredBy.toLowerCase().includes("admin")) {
+      existing.status = "Refer Remark";
+      statusChanged = true;
+    }
+
+    const updatedRequest = await existing.save();
+
+    // ✅ Send email if Admin added remark
+    if (statusChanged && existing.email) {
+      const requesterEmailContent = `
+        <p>Dear <strong>${existing.username}</strong>,</p>
+        <p>An administrator has added a new remark regarding your repair request.</p>
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+          <p><strong>Request ID:</strong> ${existing._id}</p>
+          <p><strong>Description:</strong> ${existing.description}</p>
+          <p><strong>New Remark:</strong> ${text}</p>
+          <p><strong>Status:</strong> <span class="status-badge refer">Refer Remark</span></p>
+          <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+        </div>
+        <p>Please log in to PROCCMS to view the details.</p>
+      `;
+
+      await sendStatusMail({
+        to: existing.email,
+        subject: "📌 Remark Added to Your Request - PROCCMS",
+        text: `Admin has added a new remark on your repair request ${existing._id}: ${text}`,
+        html: getEmailTemplate("New Remark Added", requesterEmailContent)
+      });
+    }
 
     res.json(updatedRequest);
   } catch (err) {
