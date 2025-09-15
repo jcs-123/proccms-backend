@@ -3,15 +3,11 @@ import RoomBooking from '../models/RoomBooking.js';
 
 const router = express.Router();
 
+/* -------------------- CREATE -------------------- */
 // POST - Create a new booking
 router.post('/', async (req, res) => {
   try {
-    const {
-      roomType,
-      date,
-      timeFrom,
-      timeTo,
-    } = req.body;
+    const { roomType, date, timeFrom, timeTo } = req.body;
 
     // Combine date and time strings into full datetime strings
     const fromTime = new Date(`${date} ${timeFrom}`);
@@ -44,19 +40,15 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET - All bookings (admin use)
+/* -------------------- READ -------------------- */
 // GET - All bookings (admin or filtered user)
 router.get('/', async (req, res) => {
   const { requestFrom, department } = req.query;
 
   try {
     let query = {};
-    if (requestFrom) {
-      query.username = requestFrom;
-    }
-    if (department) {
-      query.department = department;
-    }
+    if (requestFrom) query.username = requestFrom;
+    if (department) query.department = department;
 
     const bookings = await RoomBooking.find(query).sort({ createdAt: -1 });
     res.json(bookings);
@@ -66,25 +58,32 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ✅ GET - Room Requests (Dashboard card → exclude completed)
+router.get('/room-requests', async (req, res) => {
+  try {
+    const requests = await RoomBooking.aggregate([
+      { $match: { status: { $ne: "completed" } } }, // exclude completed bookings
+      {
+        $group: {
+          _id: "$roomType",     // group by room type
+          count: { $sum: 1 }    // count requests
+        }
+      },
+      {
+        $project: {
+          name: "$_id",
+          count: 1,
+          _id: 0
+        }
+      }
+    ]);
 
-// router.get('/', async (req, res) => {
-//   const { requestFrom } = req.query;
-
-//   try {
-//     let query = {};
-//     if (requestFrom) {
-//       query.username = requestFrom; // match on 'username' field
-//     }
-
-//     const bookings = await RoomBooking.find(query).sort({ createdAt: -1 });
-//     res.json(bookings);
-//   } catch (error) {
-//     console.error('Error fetching bookings:', error);
-//     res.status(500).json({ message: 'Error fetching bookings' });
-//   }
-// });
-
-
+    res.json(requests);
+  } catch (error) {
+    console.error("Error fetching room requests:", error);
+    res.status(500).json({ message: "Error fetching room requests" });
+  }
+});
 
 // GET - Assigned bookings for a staff (via query)
 router.get('/assigned', async (req, res) => {
@@ -98,6 +97,28 @@ router.get('/assigned', async (req, res) => {
   }
 });
 
+// GET - All bookings related to a staff (requested or assigned)
+router.get('/staff-all', async (req, res) => {
+  const { username } = req.query;
+
+  if (!username) return res.status(400).json({ message: 'Username required' });
+
+  try {
+    const bookings = await RoomBooking.find({
+      $or: [
+        { username: username },        // Requested by the user
+        { assignedStaff: username }    // Assigned to the user
+      ]
+    }).sort({ createdAt: -1 });
+
+    res.json(bookings);
+  } catch (error) {
+    console.error('Error fetching staff-related bookings:', error);
+    res.status(500).json({ message: 'Failed to fetch bookings' });
+  }
+});
+
+/* -------------------- UPDATE -------------------- */
 // PUT - Assign staff to booking
 router.put('/:id/assign-staff', async (req, res) => {
   const { staffName } = req.body;
@@ -131,27 +152,8 @@ router.put('/:id', async (req, res) => {
     res.status(500).json({ message: 'Failed to update booking' });
   }
 });
-// In routes/roomBooking.js
 
-router.get('/staff-all', async (req, res) => {
-  const { username } = req.query;
-
-  if (!username) return res.status(400).json({ message: 'Username required' });
-
-  try {
-    const bookings = await RoomBooking.find({
-      $or: [
-        { username: username },        // Requested by the user
-        { assignedStaff: username }    // Assigned to the user
-      ]
-    }).sort({ createdAt: -1 });
-
-    res.json(bookings);
-  } catch (error) {
-    console.error('Error fetching staff-related bookings:', error);
-    res.status(500).json({ message: 'Failed to fetch bookings' });
-  }
-});
+// PUT - Update booking status
 router.put('/update-status/:id', async (req, res) => {
   const { id } = req.params;
   const { status, username } = req.body;
@@ -160,7 +162,7 @@ router.put('/update-status/:id', async (req, res) => {
     const booking = await RoomBooking.findById(id);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-    // Allow status change only if the requester is the one updating
+    // Only the booking creator can update its status
     if (booking.username !== username) {
       return res.status(403).json({ message: 'Unauthorized to update this booking' });
     }
@@ -174,7 +176,9 @@ router.put('/update-status/:id', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-// In your roomBooking routes
+
+/* -------------------- REMARKS -------------------- */
+// POST - Save admin remarks
 router.post('/:id/admin-remarks', async (req, res) => {
   try {
     const booking = await RoomBooking.findById(req.params.id);
@@ -190,7 +194,7 @@ router.post('/:id/admin-remarks', async (req, res) => {
   }
 });
 
-
+// POST - Save user remarks
 router.post('/:id/user-remarks', async (req, res) => {
   try {
     const booking = await RoomBooking.findById(req.params.id);
@@ -206,9 +210,222 @@ router.post('/:id/user-remarks', async (req, res) => {
   }
 });
 
-
-
 export default router;
+
+
+
+
+// import express from 'express';
+// import RoomBooking from '../models/RoomBooking.js';
+
+// const router = express.Router();
+
+// // POST - Create a new booking
+// router.post('/', async (req, res) => {
+//   try {
+//     const {
+//       roomType,
+//       date,
+//       timeFrom,
+//       timeTo,
+//     } = req.body;
+
+//     // Combine date and time strings into full datetime strings
+//     const fromTime = new Date(`${date} ${timeFrom}`);
+//     const toTime = new Date(`${date} ${timeTo}`);
+
+//     // Check for overlapping bookings
+//     const existingBooking = await RoomBooking.findOne({
+//       roomType,
+//       date,
+//       $or: [
+//         {
+//           timeFrom: { $lt: timeTo },
+//           timeTo: { $gt: timeFrom },
+//         },
+//       ],
+//     });
+
+//     if (existingBooking) {
+//       return res.status(409).json({ message: 'Room already booked for the selected time range.' });
+//     }
+
+//     // Save new booking
+//     const newBooking = new RoomBooking(req.body);
+//     await newBooking.save();
+
+//     res.status(200).json({ message: 'Booking created successfully' });
+//   } catch (error) {
+//     console.error('Booking Error:', error);
+//     res.status(500).json({ message: 'Something went wrong' });
+//   }
+// });
+
+// // GET - All bookings (admin use)
+// // GET - All bookings (admin or filtered user)
+// router.get('/', async (req, res) => {
+//   const { requestFrom, department } = req.query;
+
+//   try {
+//     let query = {};
+//     if (requestFrom) {
+//       query.username = requestFrom;
+//     }
+//     if (department) {
+//       query.department = department;
+//     }
+
+//     const bookings = await RoomBooking.find(query).sort({ createdAt: -1 });
+//     res.json(bookings);
+//   } catch (error) {
+//     console.error('Error fetching bookings:', error);
+//     res.status(500).json({ message: 'Error fetching bookings' });
+//   }
+// });
+
+
+// // router.get('/', async (req, res) => {
+// //   const { requestFrom } = req.query;
+
+// //   try {
+// //     let query = {};
+// //     if (requestFrom) {
+// //       query.username = requestFrom; // match on 'username' field
+// //     }
+
+// //     const bookings = await RoomBooking.find(query).sort({ createdAt: -1 });
+// //     res.json(bookings);
+// //   } catch (error) {
+// //     console.error('Error fetching bookings:', error);
+// //     res.status(500).json({ message: 'Error fetching bookings' });
+// //   }
+// // });
+
+
+
+// // GET - Assigned bookings for a staff (via query)
+// router.get('/assigned', async (req, res) => {
+//   const { staff } = req.query;
+//   try {
+//     const bookings = await RoomBooking.find({ assignedStaff: staff }).sort({ createdAt: -1 });
+//     res.json(bookings);
+//   } catch (error) {
+//     console.error('Error fetching assigned bookings:', error);
+//     res.status(500).json({ message: 'Error fetching assigned bookings' });
+//   }
+// });
+
+// // PUT - Assign staff to booking
+// router.put('/:id/assign-staff', async (req, res) => {
+//   const { staffName } = req.body;
+//   try {
+//     const booking = await RoomBooking.findById(req.params.id);
+//     if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+//     booking.assignedStaff = staffName;
+//     await booking.save();
+
+//     res.status(200).json({ message: 'Staff assigned successfully' });
+//   } catch (error) {
+//     console.error('Error assigning staff:', error);
+//     res.status(500).json({ message: 'Failed to assign staff' });
+//   }
+// });
+
+// // PUT - Update full booking
+// router.put('/:id', async (req, res) => {
+//   try {
+//     const updatedBooking = await RoomBooking.findByIdAndUpdate(
+//       req.params.id,
+//       req.body,
+//       { new: true }
+//     );
+//     if (!updatedBooking) return res.status(404).json({ message: 'Booking not found' });
+
+//     res.json(updatedBooking);
+//   } catch (error) {
+//     console.error('Error updating booking:', error);
+//     res.status(500).json({ message: 'Failed to update booking' });
+//   }
+// });
+// // In routes/roomBooking.js
+
+// router.get('/staff-all', async (req, res) => {
+//   const { username } = req.query;
+
+//   if (!username) return res.status(400).json({ message: 'Username required' });
+
+//   try {
+//     const bookings = await RoomBooking.find({
+//       $or: [
+//         { username: username },        // Requested by the user
+//         { assignedStaff: username }    // Assigned to the user
+//       ]
+//     }).sort({ createdAt: -1 });
+
+//     res.json(bookings);
+//   } catch (error) {
+//     console.error('Error fetching staff-related bookings:', error);
+//     res.status(500).json({ message: 'Failed to fetch bookings' });
+//   }
+// });
+// router.put('/update-status/:id', async (req, res) => {
+//   const { id } = req.params;
+//   const { status, username } = req.body;
+
+//   try {
+//     const booking = await RoomBooking.findById(id);
+//     if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+//     // Allow status change only if the requester is the one updating
+//     if (booking.username !== username) {
+//       return res.status(403).json({ message: 'Unauthorized to update this booking' });
+//     }
+
+//     booking.status = status;
+//     await booking.save();
+
+//     res.json({ message: 'Status updated successfully', booking });
+//   } catch (error) {
+//     console.error('Status update failed:', error);
+//     res.status(500).json({ message: 'Server error' });
+//   }
+// });
+// // In your roomBooking routes
+// router.post('/:id/admin-remarks', async (req, res) => {
+//   try {
+//     const booking = await RoomBooking.findById(req.params.id);
+//     if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+//     booking.adminRemarks = req.body.remarks;
+//     await booking.save();
+
+//     res.status(200).json({ message: 'Admin remarks saved successfully' });
+//   } catch (error) {
+//     console.error('Error saving admin remarks:', error);
+//     res.status(500).json({ message: 'Failed to save admin remarks' });
+//   }
+// });
+
+
+// router.post('/:id/user-remarks', async (req, res) => {
+//   try {
+//     const booking = await RoomBooking.findById(req.params.id);
+//     if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+//     booking.userRemarks = req.body.remarks;
+//     await booking.save();
+
+//     res.status(200).json({ message: 'User remarks saved successfully' });
+//   } catch (error) {
+//     console.error('Error saving user remarks:', error);
+//     res.status(500).json({ message: 'Failed to save user remarks' });
+//   }
+// });
+
+
+
+// export default router;
 
 
 
