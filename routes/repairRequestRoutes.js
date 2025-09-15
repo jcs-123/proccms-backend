@@ -452,47 +452,29 @@ router.patch('/:id/verify', async (req, res) => {
 });
 
 // Add remarks to a repair request
-// remarks route
 router.post('/:id/remarks', async (req, res) => {
   try {
-    const { text, enteredBy, role } = req.body;
+    const { text, enteredBy } = req.body;
 
-    const existing = await RepairRequest.findById(req.params.id);
-    if (!existing) {
-      return res.status(404).json({ message: "Repair request not found" });
-    }
-
-    existing.remarks.push({ text, enteredBy, date: new Date() });
-
-    let statusChanged = false;
-    if (role && role.toLowerCase() === "admin") {
-      existing.status = "Refer Remark";
-      statusChanged = true;
-    }
-
-    const updatedRequest = await existing.save();
-
-    if (statusChanged && existing.email) {
-      try {
-        console.log("📩 Sending remark email to:", existing.email);
-
-        await sendStatusMail({
-          to: existing.email,
-          subject: "📌 Remark Added to Your Request - PROCCMS",
-          text: `Admin has added a new remark on your repair request ${existing._id}: ${text}`,
-          html: getEmailTemplate("New Remark Added", requesterEmailContent)
-        });
-      } catch (err) {
-        console.error("❌ Failed to send remark email:", err.message);
-      }
-    }
+    const updatedRequest = await RepairRequest.findByIdAndUpdate(
+      req.params.id,
+      {
+        $push: {
+          remarks: {
+            text,
+            enteredBy,
+            date: new Date()
+          }
+        }
+      },
+      { new: true }
+    );
 
     res.json(updatedRequest);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 });
-
 
 // Get remarks for a repair request
 router.get('/:id/remarks', async (req, res) => {
