@@ -76,6 +76,10 @@ router.get('/repair-staff-summary', async (req, res) => {
  * Aggregates active room bookings grouped by roomType
  * Excludes completed and cancelled
  */
+/**
+ * GET /api/admin/room-requests
+ * Returns only "pending" booking requests grouped by roomType
+ */
 router.get('/room-requests', async (req, res) => {
   try {
     // 1. Define all rooms
@@ -90,12 +94,12 @@ router.get('/room-requests', async (req, res) => {
       "OTHER (Enter Remarks)"
     ];
 
-    // 2. Aggregate only active bookings
+    console.log("📌 [DEBUG] Room requests endpoint hit");
+
+    // 2. Aggregate ONLY pending booking requests
     const bookings = await RoomBooking.aggregate([
       {
-        $match: {
-          status: { $nin: ["completed", "cancelled"] } // ✅ exclude finished bookings
-        }
+        $match: { status: "pending" }   // ✅ filter
       },
       {
         $group: {
@@ -105,21 +109,27 @@ router.get('/room-requests', async (req, res) => {
       }
     ]);
 
-    // 3. Convert results into a map
+    console.log("📌 [DEBUG] Aggregated bookings:", bookings);
+
+    // 3. Convert to dictionary
     const bookingMap = {};
     bookings.forEach(item => {
       bookingMap[item._id] = item.count;
     });
 
-    // 4. Merge with predefined room list
+    console.log("📌 [DEBUG] bookingMap:", bookingMap);
+
+    // 4. Merge with full room list
     const finalList = allRooms.map(room => ({
       name: room,
       count: bookingMap[room] || 0
     }));
 
+    console.log("📌 [DEBUG] Final list sent to client:", finalList);
+
     res.json(finalList);
   } catch (err) {
-    console.error("Room request summary failed:", err);
+    console.error("❌ Room request summary failed:", err);
     res.status(500).json({ message: "Failed to fetch room requests" });
   }
 });
