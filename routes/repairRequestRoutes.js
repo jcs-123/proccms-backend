@@ -452,12 +452,20 @@ router.patch('/:id/verify', async (req, res) => {
 });
 
 // Add remarks to a repair request
+// Add remarks to a repair request with email notifications
 router.post('/:id/remarks', async (req, res) => {
   try {
-    const { text, enteredBy } = req.body;
+    const { text, enteredBy, userRole } = req.body;
+    const requestId = req.params.id;
+
+    // Find the request first to get details
+    const request = await RepairRequest.findById(requestId);
+    if (!request) {
+      return res.status(404).json({ message: "Repair request not found" });
+    }
 
     const updatedRequest = await RepairRequest.findByIdAndUpdate(
-      req.params.id,
+      requestId,
       {
         $push: {
           remarks: {
@@ -469,6 +477,96 @@ router.post('/:id/remarks', async (req, res) => {
       },
       { new: true }
     );
+
+    // Send email notifications based on who added the remark
+    try {
+      if (userRole === "admin" || userRole === "staff") {
+        // Admin/Staff added remark - notify requester
+        if (request.email) {
+          const adminRemarkContent = `
+            <p>Dear <strong>${request.username}</strong>,</p>
+            <p>A new remark has been added to your repair request by ${enteredBy}.</p>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+              <p><strong>Request ID:</strong> ${request._id}</p>
+              <p><strong>Description:</strong> ${request.description}</p>
+              <p><strong>Status:</strong> <span class="status-badge ${request.status.toLowerCase()}">${request.status}</span></p>
+              <p><strong>New Remark:</strong> ${text}</p>
+              <p><strong>Added By:</strong> ${enteredBy}</p>
+              <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+            </div>
+            <p>Please log in to the PROCCMS system to view details and respond if needed.</p>
+          `;
+
+          await sendStatusMail({
+            to: request.email,
+            subject: "💬 New Remark Added to Your Repair Request - PROCCMS",
+            text: `A new remark has been added to your repair request (ID: ${request._id}) by ${enteredBy}. Remark: ${text}`,
+            html: getEmailTemplate("New Remark Added", adminRemarkContent)
+          });
+        }
+
+        // Also notify project office about the remark
+        const projectRemarkContent = `
+          <p>A new remark has been added to a repair request by ${enteredBy}.</p>
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Request ID:</strong> ${request._id}</p>
+            <p><strong>Requested By:</strong> ${request.username}</p>
+            <p><strong>Department:</strong> ${request.department}</p>
+            <p><strong>Description:</strong> ${request.description}</p>
+            <p><strong>Status:</strong> <span class="status-badge ${request.status.toLowerCase()}">${request.status}</span></p>
+            <p><strong>New Remark:</strong> ${text}</p>
+            <p><strong>Added By:</strong> ${enteredBy}</p>
+            <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+          </div>
+        `;
+
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: "💬 Remark Added to Repair Request - PROCCMS",
+          text: `A remark was added to request ${request._id} by ${enteredBy}.`,
+          html: getEmailTemplate("Remark Added to Request", projectRemarkContent)
+        });
+      } else {
+        // User added remark - notify admin/staff
+        const userRemarkContent = `
+          <p>A new remark has been added by the requester to their repair request.</p>
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Request ID:</strong> ${request._id}</p>
+            <p><strong>Requested By:</strong> ${request.username}</p>
+            <p><strong>Department:</strong> ${request.department}</p>
+            <p><strong>Description:</strong> ${request.description}</p>
+            <p><strong>Status:</strong> <span class="status-badge ${request.status.toLowerCase()}">${request.status}</span></p>
+            <p><strong>New Remark:</strong> ${text}</p>
+            <p><strong>Added By:</strong> ${enteredBy}</p>
+            <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+          </div>
+          <p>Please review this remark in the PROCCMS system.</p>
+        `;
+
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: "💬 User Added Remark to Repair Request - PROCCMS",
+          text: `User ${request.username} added a remark to their request ${request._id}.`,
+          html: getEmailTemplate("User Remark Added", userRemarkContent)
+        });
+
+        // Also notify assigned staff if there is one
+        if (request.assignedTo && request.assignedTo !== "--- select ---") {
+          const staff = await Staff.findOne({ name: request.assignedTo });
+          if (staff?.email) {
+            await sendStatusMail({
+              to: staff.email,
+              subject: "💬 User Added Remark to Assigned Request - PROCCMS",
+              text: `User ${request.username} added a remark to request ${request._id} which is assigned to you.`,
+              html: getEmailTemplate("User Remark Added to Your Request", userRemarkContent)
+            });
+          }
+        }
+      }
+    } catch (emailError) {
+      console.error("Failed to send remark notification email:", emailError.message);
+      // Don't fail the request if email fails
+    }
 
     res.json(updatedRequest);
   } catch (err) {
