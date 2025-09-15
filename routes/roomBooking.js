@@ -62,11 +62,11 @@ router.get('/', async (req, res) => {
 router.get('/room-requests', async (req, res) => {
   try {
     const requests = await RoomBooking.aggregate([
-      { $match: { status: { $ne: "completed" } } }, // exclude completed bookings
+      { $match: { status: { $nin: ["completed", "cancelled"] } } }, // exclude both
       {
         $group: {
-          _id: "$roomType",     // group by room type
-          count: { $sum: 1 }    // count requests
+          _id: "$roomType",
+          count: { $sum: 1 }
         }
       },
       {
