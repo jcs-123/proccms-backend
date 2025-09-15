@@ -20,22 +20,28 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ Ensure uploads directory exists
+// ✅ CRITICAL: Ensure uploads directory exists at the correct path
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
-  console.log("✅ Created uploads directory");
+  console.log("✅ Created uploads directory at:", uploadsDir);
+} else {
+  console.log("✅ Uploads directory already exists at:", uploadsDir);
 }
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// ✅ Serve uploaded files with proper configuration
+// ✅ CRITICAL: Serve uploaded files from the correct path
 app.use("/uploads", express.static(uploadsDir, {
-  setHeaders: (res, path) => {
+  setHeaders: (res, filePath) => {
     // Set proper caching headers for uploaded files
-    res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+    if (path.extname(filePath) === '.png' || 
+        path.extname(filePath) === '.jpg' || 
+        path.extname(filePath) === '.jpeg') {
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 1 day
+    }
   }
 }));
 
@@ -54,11 +60,36 @@ app.get("/health", (req, res) => {
     "✅ Uploads directory exists" : 
     "❌ Uploads directory missing";
   
+  // Check if we can read from the uploads directory
+  let canReadUploads = false;
+  try {
+    fs.readdirSync(uploadsDir);
+    canReadUploads = true;
+  } catch (error) {
+    console.error("Cannot read uploads directory:", error);
+  }
+  
   res.json({
     status: "Server is running",
     uploadsDirectory: uploadsStatus,
     uploadsPath: uploadsDir,
+    readable: canReadUploads,
+    files: canReadUploads ? fs.readdirSync(uploadsDir) : [],
     timestamp: new Date().toISOString()
+  });
+});
+
+// Test file serving endpoint
+app.get("/test-upload", (req, res) => {
+  const testFilePath = path.join(uploadsDir, "test.txt");
+  
+  // Create a test file
+  fs.writeFileSync(testFilePath, "This is a test file for verifying uploads directory");
+  
+  res.json({
+    message: "Test file created",
+    path: testFilePath,
+    url: "/uploads/test.txt"
   });
 });
 
@@ -71,19 +102,22 @@ app.get("/", (req, res) => {
         <style>
           body { font-family: Arial, sans-serif; margin: 40px; }
           .status { color: green; font-weight: bold; }
+          .error { color: red; }
           .endpoints { margin-top: 20px; }
           .endpoint { margin: 5px 0; padding: 5px; background: #f5f5f5; }
+          code { background: #eee; padding: 2px 5px; }
         </style>
       </head>
       <body>
         <h1>PROCCMS Backend is running</h1>
         <p class="status">✅ Server is operational</p>
         <p>Uploads directory: <code>${uploadsDir}</code></p>
-        <p>Uploads status: ${fs.existsSync(uploadsDir) ? '✅ Exists' : '❌ Missing'}</p>
+        <p>Uploads status: ${fs.existsSync(uploadsDir) ? '<span class="status">✅ Exists</span>' : '<span class="error">❌ Missing</span>'}</p>
         
         <div class="endpoints">
           <h3>Available API Endpoints:</h3>
-          <div class="endpoint"><strong>GET</strong> /health - Server health check</div>
+          <div class="endpoint"><strong>GET</strong> <a href="/health">/health</a> - Server health check</div>
+          <div class="endpoint"><strong>GET</strong> <a href="/test-upload">/test-upload</a> - Test file upload</div>
           <div class="endpoint"><strong>POST</strong> /api/repair-requests - Create repair request</div>
           <div class="endpoint"><strong>GET</strong> /api/repair-requests - Get repair requests</div>
           <div class="endpoint"><strong>POST</strong> /api/auth/login - User authentication</div>
@@ -96,7 +130,7 @@ app.get("/", (req, res) => {
         
         <p style="margin-top: 30px;">
           <a href="/health">Check server health</a> | 
-          <a href="/uploads">View uploads directory</a>
+          <a href="/test-upload">Test uploads directory</a>
         </p>
       </body>
     </html>
@@ -134,5 +168,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📁 Uploads directory: ${uploadsDir}`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔗 Test upload: http://localhost:${PORT}/test-upload`);
   console.log(`📊 Server status: http://localhost:${PORT}/`);
 });

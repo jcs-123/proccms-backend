@@ -11,20 +11,18 @@ const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ CRITICAL FIX: Serve static files from uploads directory
-router.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// ✅ CRITICAL: Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
+  console.log("✅ Created uploads directory in routes:", uploadsDir);
+}
 
 // Multer config for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../uploads");
-
-    // Create directory if it doesn't exist with proper permissions
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true, mode: 0o755 });
-    }
-
-    cb(null, uploadDir);
+    // Use the same uploads directory as in server.js
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     // Create a unique filename with original extension
@@ -38,9 +36,15 @@ const upload = multer({
   storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images only
+    if (!file.originalname.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx)$/)) {
+      return cb(new Error('Only image and document files are allowed!'), false);
+    }
+    cb(null, true);
   }
 });
-
 // Email template function for consistency
 const getEmailTemplate = (title, content) => {
   return `
@@ -57,7 +61,7 @@ const getEmailTemplate = (title, content) => {
         .status-badge { 
           display: inline-block; 
           padding: 4px 8px; 
-          borderRadius: 4px; 
+          border-radius: 4px; 
           font-weight: bold; 
           font-size: 12px; 
         }
@@ -109,18 +113,6 @@ router.post("/", upload.single("file"), async (req, res) => {
 
     const savedRequest = await newRequest.save();
 
-    // ✅ Set file permissions after saving
-    if (req.file) {
-      const filePath = path.join(__dirname, "../uploads", req.file.filename);
-      fs.chmod(filePath, 0o755, (err) => {
-        if (err) {
-          console.error("Error setting file permissions:", err);
-        } else {
-          console.log("File permissions set successfully");
-        }
-      });
-    }
-
     // ✅ Send email to project when new request is created
     try {
       const emailContent = `
@@ -153,6 +145,7 @@ router.post("/", upload.single("file"), async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
 /**
  * GET - Fetch repair requests based on user role
  * Admin: gets all
