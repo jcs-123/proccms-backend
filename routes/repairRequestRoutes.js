@@ -16,18 +16,28 @@ const uploadsDir = path.join(__dirname, "../uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
   console.log("✅ Created uploads directory in routes:", uploadsDir);
+} else {
+  console.log("✅ Uploads directory exists:", uploadsDir);
+  // Debug: List existing files
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    console.log("📁 Existing files:", files);
+  } catch (error) {
+    console.error("❌ Cannot read uploads directory:", error);
+  }
 }
 
 // Multer config for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Use the same uploads directory as in server.js
+    console.log("📁 Destination:", uploadsDir);
     cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
     // Create a unique filename with original extension
     const ext = path.extname(file.originalname);
     const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    console.log("💾 New filename:", filename, "for original:", file.originalname);
     cb(null, filename);
   },
 });
@@ -38,10 +48,17 @@ const upload = multer({
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Accept images and documents
-    if (!file.originalname.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx)$/i)) {
+    console.log("🔍 File filter checking:", file.originalname);
+    
+    // Accept images and documents (case insensitive)
+    const allowedExtensions = /\.(jpg|jpeg|png|gif|bmp|webp|pdf|doc|docx)$/i;
+    
+    if (!allowedExtensions.test(file.originalname)) {
+      console.log("❌ File rejected:", file.originalname);
       return cb(new Error('Only image and document files are allowed!'), false);
     }
+    
+    console.log("✅ File accepted:", file.originalname);
     cb(null, true);
   }
 });
@@ -95,71 +112,100 @@ const getEmailTemplate = (title, content) => {
  * POST - Create new repair request
  * Accepts optional file upload.
  */
-router.post("/", upload.single("file"), async (req, res) => {
-  try {
-    const { username, description, isNewRequirement, role, department, email } = req.body;
-    const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
-
-    const newRequest = new RepairRequest({
-      username,
-      department,
-      description,
-      isNewRequirement,
-      role,
-      email: email || '',
-      fileUrl,
-      status: "Pending",
-      assignedTo: "",
-    });
-
-    const savedRequest = await newRequest.save();
-
-    // ✅ Set file permissions after saving
-    if (req.file) {
-      const filePath = path.join(uploadsDir, req.file.filename);
-      fs.chmod(filePath, 0o755, (err) => {
-        if (err) {
-          console.error("Error setting file permissions:", err);
-        } else {
-          console.log("File permissions set successfully");
-        }
-      });
-    }
-
-    // ✅ Send email to project when new request is created
+router.post("/", (req, res) => {
+  // Use multer upload with proper error handling
+  upload.single("file")(req, res, async function (err) {
     try {
-      const emailContent = `
-        <p>A new repair request has been submitted through the PROCCMS system.</p>
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
-          <p><strong>Request ID:</strong> ${savedRequest._id}</p>
-          <p><strong>Requested By:</strong> ${username}</p>
-          <p><strong>Department:</strong> ${department}</p>
-          <p><strong>Request Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
-          <p><strong>Description:</strong> ${description}</p>
-          <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
-          <p><strong>Submission Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
-        </div>
-        <p>Please review and assign this request to appropriate staff member.</p>
-      `;
+      if (err) {
+        console.error("❌ Upload error:", err.message);
+        
+        if (err instanceof multer.MulterError) {
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({ 
+              message: 'File too large. Maximum size is 5MB.' 
+            });
+          }
+        }
+        
+        return res.status(400).json({ 
+          message: err.message || 'File upload failed' 
+        });
+      }
+      
+      console.log("📦 Request body:", req.body);
+      console.log("📄 Uploaded file:", req.file);
+      
+      const { username, description, isNewRequirement, role, department, email } = req.body;
+      const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
-      await sendStatusMail({
-        to: "sandraps@jecc.ac.in",
-        subject: "📋 New Repair Request Created - PROCCMS",
-        text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
-        html: getEmailTemplate("New Repair Request Created", emailContent)
+      console.log("🌐 File URL to be saved:", fileUrl);
+
+      const newRequest = new RepairRequest({
+        username,
+        department,
+        description,
+        isNewRequirement: isNewRequirement === 'true' || isNewRequirement === true,
+        role,
+        email: email || '',
+        fileUrl,
+        status: "Pending",
+        assignedTo: "",
       });
-    } catch (emailError) {
-      console.error("Failed to send creation email:", emailError.message);
-      // Don't fail the request if email fails
+
+      const savedRequest = await newRequest.save();
+      console.log("💾 Request saved to database:", savedRequest._id);
+
+      // ✅ Set file permissions after saving
+      if (req.file) {
+        const filePath = path.join(uploadsDir, req.file.filename);
+        fs.chmod(filePath, 0o755, (err) => {
+          if (err) {
+            console.error("❌ Error setting file permissions:", err);
+          } else {
+            console.log("✅ File permissions set successfully");
+          }
+        });
+      }
+
+      // ✅ Send email to project when new request is created
+      try {
+        const emailContent = `
+          <p>A new repair request has been submitted through the PROCCMS system.</p>
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Request ID:</strong> ${savedRequest._id}</p>
+            <p><strong>Requested By:</strong> ${username}</p>
+            <p><strong>Department:</strong> ${department}</p>
+            <p><strong>Request Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
+            <p><strong>Description:</strong> ${description}</p>
+            <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
+            <p><strong>Submission Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+            ${fileUrl ? `<p><strong>Attachment:</strong> <a href="https://proccms-backend.onrender.com${fileUrl}">View File</a></p>` : ''}
+          </div>
+          <p>Please review and assign this request to appropriate staff member.</p>
+        `;
+
+        await sendStatusMail({
+          to: "sandraps@jecc.ac.in",
+          subject: "📋 New Repair Request Created - PROCCMS",
+          text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
+          html: getEmailTemplate("New Repair Request Created", emailContent)
+        });
+        
+        console.log("📧 Notification email sent");
+      } catch (emailError) {
+        console.error("❌ Failed to send creation email:", emailError.message);
+        // Don't fail the request if email fails
+      }
+
+      res.status(201).json(savedRequest);
+    } catch (err) {
+      console.error("❌ Error creating repair request:", err);
+      res.status(500).json({ message: err.message });
     }
+  });
+});
 
-    res.status(201).json(savedRequest);
-  } catch (err) {
-    console.error("Error creating repair request:", err);
-    res.status(500).json({ message: err.message });
-  }
-})
-
+// ... rest of your routes remain the same
 // import express from "express";
 // import multer from "multer";
 // import path from "path";
