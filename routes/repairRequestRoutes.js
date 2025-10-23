@@ -75,14 +75,14 @@ const getEmailTemplate = (title, content) => {
     <body>
       <div class="container">
         <div class="header">
-          <h2>PROCCMS - JECC Maintenance System</h2>
+          <h2>PMS - JECC Maintenance System</h2>
         </div>
         <div class="content">
           <h3>${title}</h3>
           ${content}
         </div>
         <div class="footer">
-          <p>This is an automated email from PROCCMS (Project Office Computerized Complaint Management System).</p>
+          <p>This is an automated email from PMS (Project Office Computerized Complaint Management System).</p>
           <p>Please do not reply to this email. Contact the project office for assistance.</p>
         </div>
       </div>
@@ -129,7 +129,7 @@ router.post("/", upload.single("file"), async (req, res) => {
     // ✅ Send email to project when new request is created
     try {
       const emailContent = `
-        <p>A new repair request has been submitted through the PROCCMS system.</p>
+        <p>A new repair request has been submitted through the PMS system.</p>
         <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
           <p><strong>Request ID:</strong> ${savedRequest._id}</p>
           <p><strong>Requested By:</strong> ${username}</p>
@@ -144,7 +144,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 
       await sendStatusMail({
         to: "sandraps@jecc.ac.in",
-        subject: "📋 New Repair Request Created - PROCCMS",
+        subject: "📋 New Repair Request Created - PMS",
         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
         html: getEmailTemplate("New Repair Request Created", emailContent)
       });
@@ -236,14 +236,14 @@ router.post("/", upload.single("file"), async (req, res) => {
 //     <body>
 //       <div class="container">
 //         <div class="header">
-//           <h2>PROCCMS - JECC Maintenance System</h2>
+//           <h2>PMS - JECC Maintenance System</h2>
 //         </div>
 //         <div class="content">
 //           <h3>${title}</h3>
 //           ${content}
 //         </div>
 //         <div class="footer">
-//           <p>This is an automated email from PROCCMS (Project Office Computerized Complaint Management System).</p>
+//           <p>This is an automated email from PMS (Project Office Computerized Complaint Management System).</p>
 //           <p>Please do not reply to this email. Contact the project office for assistance.</p>
 //         </div>
 //       </div>
@@ -278,7 +278,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 //     // ✅ Send email to project when new request is created
 //     try {
 //       const emailContent = `
-//         <p>A new repair request has been submitted through the PROCCMS system.</p>
+//         <p>A new repair request has been submitted through the PMS system.</p>
 //         <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
 //           <p><strong>Request ID:</strong> ${savedRequest._id}</p>
 //           <p><strong>Requested By:</strong> ${username}</p>
@@ -293,7 +293,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 
 //       await sendStatusMail({
 //         to: "sandraps@jecc.ac.in",
-//         subject: "📋 New Repair Request Created - PROCCMS",
+//         subject: "📋 New Repair Request Created - PMS",
 //         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
 //         html: getEmailTemplate("New Repair Request Created", emailContent)
 //       });
@@ -425,12 +425,12 @@ router.patch("/:id", async (req, res) => {
             <p><strong>Priority:</strong> ${existing.priority || "Normal"}</p>
             <p><strong>Status:</strong> <span class="status-badge assigned">Assigned</span></p>
           </div>
-          <p>Please log in to the PROCCMS system to update the status and add remarks.</p>
+          <p>Please log in to the PMS system to update the status and add remarks.</p>
         `;
 
         await sendStatusMail({
           to: staff.email,
-          subject: "📌 Repair Request Assigned to You - PROCCMS",
+          subject: "📌 Repair Request Assigned to You - PMS",
           text: `Dear ${staff.name}, repair request ${existing._id} has been assigned to you.`,
           html: getEmailTemplate("Repair Request Assigned", staffEmailContent)
         });
@@ -450,7 +450,7 @@ router.patch("/:id", async (req, res) => {
 
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "👤 Repair Request Assigned - PROCCMS",
+          subject: "👤 Repair Request Assigned - PMS",
           text: `Repair request ${existing._id} assigned to ${staff.name}.`,
           html: getEmailTemplate("Repair Request Assigned", projectEmailContent)
         });
@@ -471,7 +471,7 @@ router.patch("/:id", async (req, res) => {
 
           await sendStatusMail({
             to: existing.email,
-            subject: "🔄 Repair Request Assigned - PROCCMS",
+            subject: "🔄 Repair Request Assigned - PMS",
             text: `Your repair request has been assigned to ${staff.name}.`,
             html: getEmailTemplate("Request Assigned to Staff", requesterEmailContent)
           });
@@ -502,7 +502,7 @@ router.patch("/:id", async (req, res) => {
         completionEmails.push(
           sendStatusMail({
             to: existing.email,
-            subject: "✅ Repair Request Completed - PROCCMS",
+            subject: "✅ Repair Request Completed - PMS",
             text: `Your repair request ${existing._id} has been completed.`,
             html: getEmailTemplate("Repair Request Completed", requesterCompletionContent)
           })
@@ -527,7 +527,7 @@ router.patch("/:id", async (req, res) => {
       completionEmails.push(
         sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "✅ Repair Request Completed - PROCCMS",
+          subject: "✅ Repair Request Completed - PMS",
           text: `Repair request ${existing._id} completed by ${existing.assignedTo}.`,
           html: getEmailTemplate("Repair Request Completed", projectCompletionContent)
         })
@@ -579,7 +579,7 @@ router.patch('/:id/verify', async (req, res) => {
         // Email to project office
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "✅ Repair Request Verified - PROCCMS",
+          subject: "✅ Repair Request Verified - PMS",
           text: `Repair request ${existing._id} verified by admin.`,
           html: getEmailTemplate("Repair Request Verified", verificationContent)
         });
@@ -595,12 +595,12 @@ router.patch('/:id/verify', async (req, res) => {
               <p><strong>Verified Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
               <p><strong>Status:</strong> <span class="status-badge verified">Verified & Closed</span></p>
             </div>
-            <p>Thank you for using PROCCMS services.</p>
+            <p>Thank you for using PMS services.</p>
           `;
 
           await sendStatusMail({
             to: existing.email,
-            subject: "✅ Repair Request Verified - PROCCMS",
+            subject: "✅ Repair Request Verified - PMS",
             text: `Your repair request ${existing._id} has been verified.`,
             html: getEmailTemplate("Request Verified", requesterVerificationContent)
           });
@@ -661,12 +661,12 @@ router.post('/:id/remarks', async (req, res) => {
               <p><strong>Added By:</strong> ${enteredBy}</p>
               <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
             </div>
-            <p>Please log in to the PROCCMS system to view details and respond if needed.</p>
+            <p>Please log in to the PMS system to view details and respond if needed.</p>
           `;
 
           await sendStatusMail({
             to: request.email,
-            subject: "💬 New Remark Added to Your Repair Request - PROCCMS",
+            subject: "💬 New Remark Added to Your Repair Request - PMS",
             text: `A new remark has been added to your repair request (ID: ${request._id}) by ${enteredBy}. Remark: ${text}`,
             html: getEmailTemplate("New Remark Added", adminRemarkContent)
           });
@@ -689,7 +689,7 @@ router.post('/:id/remarks', async (req, res) => {
 
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "💬 Remark Added to Repair Request - PROCCMS",
+          subject: "💬 Remark Added to Repair Request - PMS",
           text: `A remark was added to request ${request._id} by ${enteredBy}.`,
           html: getEmailTemplate("Remark Added to Request", projectRemarkContent)
         });
@@ -707,12 +707,12 @@ router.post('/:id/remarks', async (req, res) => {
             <p><strong>Added By:</strong> ${enteredBy}</p>
             <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
           </div>
-          <p>Please review this remark in the PROCCMS system.</p>
+          <p>Please review this remark in the PMS system.</p>
         `;
 
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "💬 User Added Remark to Repair Request - PROCCMS",
+          subject: "💬 User Added Remark to Repair Request - PMS",
           text: `User ${request.username} added a remark to their request ${request._id}.`,
           html: getEmailTemplate("User Remark Added", userRemarkContent)
         });
@@ -723,7 +723,7 @@ router.post('/:id/remarks', async (req, res) => {
           if (staff?.email) {
             await sendStatusMail({
               to: staff.email,
-              subject: "💬 User Added Remark to Assigned Request - PROCCMS",
+              subject: "💬 User Added Remark to Assigned Request - PMS",
               text: `User ${request.username} added a remark to request ${request._id} which is assigned to you.`,
               html: getEmailTemplate("User Remark Added to Your Request", userRemarkContent)
             });

@@ -106,7 +106,7 @@ app.get("/", (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>PROCCMS Backend</title>
+        <title>PMS Backend</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 40px; }
           .status { color: green; font-weight: bold; }
@@ -117,7 +117,7 @@ app.get("/", (req, res) => {
         </style>
       </head>
       <body>
-        <h1>PROCCMS Backend is running</h1>
+        <h1>PMS Backend is running</h1>
         <p class="status">✅ Server is operational</p>
         <p>Uploads directory: <code>${uploadsDir}</code></p>
         <p>Uploads status: ${fs.existsSync(uploadsDir) ? '<span class="status">✅ Exists</span>' : '<span class="error">❌ Missing</span>'}</p>
@@ -280,7 +280,7 @@ app.listen(PORT, () => {
 //   res.send(`
 //     <html>
 //       <head>
-//         <title>PROCCMS Backend</title>
+//         <title>PMS Backend</title>
 //         <style>
 //           body { font-family: Arial, sans-serif; margin: 40px; }
 //           .status { color: green; font-weight: bold; }
@@ -291,7 +291,7 @@ app.listen(PORT, () => {
 //         </style>
 //       </head>
 //       <body>
-//         <h1>PROCCMS Backend is running</h1>
+//         <h1>PMS Backend is running</h1>
 //         <p class="status">✅ Server is operational</p>
 //         <p>Uploads directory: <code>${uploadsDir}</code></p>
 //         <p>Uploads status: ${fs.existsSync(uploadsDir) ? '<span class="status">✅ Exists</span>' : '<span class="error">❌ Missing</span>'}</p>

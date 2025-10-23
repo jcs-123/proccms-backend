@@ -12,7 +12,7 @@ const transporter = nodemailer.createTransport({
 export const sendStatusMail = async ({ to, subject, text, html, cc = [] }) => {
   try {
     const mailOptions = {
-      from: `"PROCCMS" <jcs@jecc.ac.in>`,
+      from: `"PMS" <jcs@jecc.ac.in>`,
       to,
       subject,
       text,
