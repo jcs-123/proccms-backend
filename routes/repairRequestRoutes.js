@@ -100,29 +100,6 @@ router.post("/", upload.single("file"), async (req, res) => {
     const { username, description, isNewRequirement, role, department, email } = req.body;
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
-    // ✅ Step 1: Check for duplicates in last 2 hours
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
-
-    const duplicate = await RepairRequest.findOne({
-      username,
-      department,
-      description,
-      createdAt: { $gte: twoHoursAgo }
-    });
-
-    if (duplicate) {
-      // Optional: clean up uploaded file if user uploaded again
-      if (req.file) {
-        fs.unlinkSync(path.join(uploadsDir, req.file.filename));
-      }
-
-      return res.status(409).json({
-        message: "Duplicate request detected. This request already exists.",
-        existingRequest: duplicate
-      });
-    }
-
-    // ✅ Step 2: Proceed to save if no duplicate found
     const newRequest = new RepairRequest({
       username,
       department,
@@ -141,11 +118,15 @@ router.post("/", upload.single("file"), async (req, res) => {
     if (req.file) {
       const filePath = path.join(uploadsDir, req.file.filename);
       fs.chmod(filePath, 0o755, (err) => {
-        if (err) console.error("Error setting file permissions:", err);
+        if (err) {
+          console.error("Error setting file permissions:", err);
+        } else {
+          console.log("File permissions set successfully");
+        }
       });
     }
 
-    // ✅ Step 3: Send email notification (same as before)
+    // ✅ Send email to project when new request is created
     try {
       const emailContent = `
         <p>A new repair request has been submitted through the PMS system.</p>
@@ -158,26 +139,26 @@ router.post("/", upload.single("file"), async (req, res) => {
           <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
           <p><strong>Submission Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
         </div>
-        <p>Please review and assign this request to the appropriate staff member.</p>
+        <p>Please review and assign this request to appropriate staff member.</p>
       `;
 
       await sendStatusMail({
-        to: "project@jecc.ac.in",
+        to: "sandraps@jecc.ac.in",
         subject: "📋 New Repair Request Created - PMS",
         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
         html: getEmailTemplate("New Repair Request Created", emailContent)
       });
     } catch (emailError) {
       console.error("Failed to send creation email:", emailError.message);
+      // Don't fail the request if email fails
     }
 
     res.status(201).json(savedRequest);
-
   } catch (err) {
     console.error("Error creating repair request:", err);
     res.status(500).json({ message: err.message });
   }
-});
+})
 
 // import express from "express";
 // import multer from "multer";
@@ -311,7 +292,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 //       `;
 
 //       await sendStatusMail({
-//         to: "project@jecc.ac.in",
+//         to: "sandraps@jecc.ac.in",
 //         subject: "📋 New Repair Request Created - PMS",
 //         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
 //         html: getEmailTemplate("New Repair Request Created", emailContent)
@@ -468,7 +449,7 @@ router.patch("/:id", async (req, res) => {
         `;
 
         await sendStatusMail({
-          to: "project@jecc.ac.in",
+          to: "sandraps@jecc.ac.in",
           subject: "👤 Repair Request Assigned - PMS",
           text: `Repair request ${existing._id} assigned to ${staff.name}.`,
           html: getEmailTemplate("Repair Request Assigned", projectEmailContent)
@@ -545,7 +526,7 @@ router.patch("/:id", async (req, res) => {
 
       completionEmails.push(
         sendStatusMail({
-          to: "project@jecc.ac.in",
+          to: "sandraps@jecc.ac.in",
           subject: "✅ Repair Request Completed - PMS",
           text: `Repair request ${existing._id} completed by ${existing.assignedTo}.`,
           html: getEmailTemplate("Repair Request Completed", projectCompletionContent)
@@ -597,7 +578,7 @@ router.patch('/:id/verify', async (req, res) => {
 
         // Email to project office
         await sendStatusMail({
-          to: "project@jecc.ac.in",
+          to: "sandraps@jecc.ac.in",
           subject: "✅ Repair Request Verified - PMS",
           text: `Repair request ${existing._id} verified by admin.`,
           html: getEmailTemplate("Repair Request Verified", verificationContent)
@@ -707,7 +688,7 @@ router.post('/:id/remarks', async (req, res) => {
         `;
 
         await sendStatusMail({
-          to: "project@jecc.ac.in",
+          to: "sandraps@jecc.ac.in",
           subject: "💬 Remark Added to Repair Request - PMS",
           text: `A remark was added to request ${request._id} by ${enteredBy}.`,
           html: getEmailTemplate("Remark Added to Request", projectRemarkContent)
@@ -730,7 +711,7 @@ router.post('/:id/remarks', async (req, res) => {
         `;
 
         await sendStatusMail({
-          to: "project@jecc.ac.in",
+          to: "sandraps@jecc.ac.in",
           subject: "💬 User Added Remark to Repair Request - PMS",
           text: `User ${request.username} added a remark to their request ${request._id}.`,
           html: getEmailTemplate("User Remark Added", userRemarkContent)
