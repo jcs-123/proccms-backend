@@ -79,7 +79,7 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-ZZ
+
 // Test file serving endpoint
 app.get("/test-upload", (req, res) => {
   const testFilePath = path.join(uploadsDir, "test.txt");

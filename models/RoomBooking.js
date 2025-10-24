@@ -4,7 +4,7 @@ const roomBookingSchema = new mongoose.Schema(
   {
     username: { type: String, required: true }, // requesting user
     department: { type: String, required: true },
-    mobileNumber: { type: String, required: true },
+    mobileNumber: { type: String },
     roomType: { type: String, required: true },
     date: { type: String, required: true },
     timeFrom: { type: String, required: true },
