@@ -79,19 +79,7 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
-
-app.get("/check-file/:filename", (req, res) => {
-  const filePath = path.join(uploadsDir, req.params.filename);
-  if (fs.existsSync(filePath)) {
-    return res.json({ exists: true, path: filePath });
-  } else {
-    return res.status(404).json({ exists: false, path: filePath });
-  }
-});
-
-
-
+ZZ
 // Test file serving endpoint
 app.get("/test-upload", (req, res) => {
   const testFilePath = path.join(uploadsDir, "test.txt");
@@ -118,7 +106,7 @@ app.get("/", (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>PMS Backend</title>
+        <title>PROCCMS Backend</title>
         <style>
           body { font-family: Arial, sans-serif; margin: 40px; }
           .status { color: green; font-weight: bold; }
@@ -129,7 +117,7 @@ app.get("/", (req, res) => {
         </style>
       </head>
       <body>
-        <h1>PMS Backend is running</h1>
+        <h1>PROCCMS Backend is running</h1>
         <p class="status">✅ Server is operational</p>
         <p>Uploads directory: <code>${uploadsDir}</code></p>
         <p>Uploads status: ${fs.existsSync(uploadsDir) ? '<span class="status">✅ Exists</span>' : '<span class="error">❌ Missing</span>'}</p>
@@ -292,7 +280,7 @@ app.listen(PORT, () => {
 //   res.send(`
 //     <html>
 //       <head>
-//         <title>PMS Backend</title>
+//         <title>PROCCMS Backend</title>
 //         <style>
 //           body { font-family: Arial, sans-serif; margin: 40px; }
 //           .status { color: green; font-weight: bold; }
@@ -303,7 +291,7 @@ app.listen(PORT, () => {
 //         </style>
 //       </head>
 //       <body>
-//         <h1>PMS Backend is running</h1>
+//         <h1>PROCCMS Backend is running</h1>
 //         <p class="status">✅ Server is operational</p>
 //         <p>Uploads directory: <code>${uploadsDir}</code></p>
 //         <p>Uploads status: ${fs.existsSync(uploadsDir) ? '<span class="status">✅ Exists</span>' : '<span class="error">❌ Missing</span>'}</p>
