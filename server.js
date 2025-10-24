@@ -80,6 +80,18 @@ app.get("/health", (req, res) => {
   });
 });
 
+
+app.get("/check-file/:filename", (req, res) => {
+  const filePath = path.join(uploadsDir, req.params.filename);
+  if (fs.existsSync(filePath)) {
+    return res.json({ exists: true, path: filePath });
+  } else {
+    return res.status(404).json({ exists: false, path: filePath });
+  }
+});
+
+
+
 // Test file serving endpoint
 app.get("/test-upload", (req, res) => {
   const testFilePath = path.join(uploadsDir, "test.txt");
