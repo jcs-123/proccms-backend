@@ -2,138 +2,163 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import { fileURLToPath } from "url";
-import fs from "fs";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
+import fs from "fs";
 
 const router = express.Router();
-
-// =============== PATH SETUP ===============
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, "../uploads");
 
+// ✅ Use the same uploads directory as in server.js
+const uploadsDir = path.join(__dirname, "../uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
-  console.log("✅ Uploads directory created:", uploadsDir);
+  console.log("✅ Created uploads directory in routes:", uploadsDir);
 }
 
-// =============== MULTER CONFIG ===============
+// Multer config for file uploads
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
+  destination: (req, file, cb) => {
+    // Use the same uploads directory as in server.js
+    cb(null, uploadsDir);
+  },
   filename: (req, file, cb) => {
+    // Create a unique filename with original extension
     const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`);
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    cb(null, filename);
   },
 });
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
   fileFilter: (req, file, cb) => {
+    // Accept images and documents
     if (!file.originalname.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx)$/i)) {
-      return cb(new Error("Only image and document files are allowed!"), false);
+      return cb(new Error('Only image and document files are allowed!'), false);
     }
     cb(null, true);
-  },
+  }
 });
 
-// =============== EMAIL TEMPLATE ===============
-const getEmailTemplate = (title, content) => `
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<style>
-  body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-  .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-  .header { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; }
-  .content { background: white; padding: 20px; border-radius: 5px; margin-top: 10px; }
-  .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
-  .status-badge { display: inline-block; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
-  .pending { background: #fff3cd; color: #856404; }
-</style>
-</head>
-<body>
-  <div class="container">
-    <div class="header"><h2>PMS - JECC Maintenance System</h2></div>
-    <div class="content">
-      <h3>${title}</h3>
-      ${content}
-    </div>
-    <div class="footer">
-      <p>This is an automated email from PMS (Project Office Complaint Management System).</p>
-      <p>Please do not reply to this email.</p>
-    </div>
-  </div>
-</body>
-</html>`;
+// Email template function for consistency
+const getEmailTemplate = (title, content) => {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; }
+        .content { background: white; padding: 20px; border-radius: 5px; margin-top: 10px; }
+        .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
+        .status-badge { 
+          display: inline-block; 
+          padding: 4px 8px; 
+          border-radius: 4px; 
+          font-weight: bold; 
+          font-size: 12px; 
+        }
+        .pending { background: #fff3cd; color: #856404; }
+        .assigned { background: #d1ecf1; color: #0c5460; }
+        .completed { background: #d4edda; color: #155724; }
+        .verified { background: #e2e3e5; color: #383d41; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>PMS - JECC Maintenance System</h2>
+        </div>
+        <div class="content">
+          <h3>${title}</h3>
+          ${content}
+        </div>
+        <div class="footer">
+          <p>This is an automated email from PROCCMS (Project Office Computerized Complaint Management System).</p>
+          <p>Please do not reply to this email. Contact the project office for assistance.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+};
 
-// =============== POST: CREATE REPAIR REQUEST ===============
+/**
+ * POST - Create new repair request
+ * Accepts optional file upload.
+ */
 router.post("/", upload.single("file"), async (req, res) => {
-  console.log("🟢 POST /api/repair-requests hit");
   try {
     const { username, description, isNewRequirement, role, department, email } = req.body;
-    console.log("Request body:", req.body);
-    console.log("Uploaded file:", req.file ? req.file.originalname : "None");
-
-    if (!username || !description) {
-      return res.status(400).json({ message: "Username and description are required" });
-    }
-
     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
+
     const newRequest = new RepairRequest({
       username,
       department,
       description,
-      isNewRequirement: isNewRequirement === "true" || isNewRequirement === true,
+      isNewRequirement,
       role,
-      email: email || "",
+      email: email || '',
       fileUrl,
       status: "Pending",
       assignedTo: "",
     });
 
     const savedRequest = await newRequest.save();
-    console.log("✅ Request saved:", savedRequest._id);
 
-    // Fix file permissions
+    // ✅ Set file permissions after saving
     if (req.file) {
-      fs.chmod(path.join(uploadsDir, req.file.filename), 0o755, err => {
-        if (err) console.error("⚠️ File permission error:", err.message);
+      const filePath = path.join(uploadsDir, req.file.filename);
+      fs.chmod(filePath, 0o755, (err) => {
+        if (err) {
+          console.error("Error setting file permissions:", err);
+        } else {
+          console.log("File permissions set successfully");
+        }
       });
     }
 
-    // Safe email send
+    // ✅ Send email to project when new request is created
     try {
       const emailContent = `
-        <p>A new repair request has been submitted.</p>
-        <p><strong>Request ID:</strong> ${savedRequest._id}</p>
-        <p><strong>Requested By:</strong> ${username}</p>
-        <p><strong>Department:</strong> ${department}</p>
-        <p><strong>Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
-        <p><strong>Description:</strong> ${description}</p>
-        <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
-        <p><strong>Date:</strong> ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
+        <p>A new repair request has been submitted through the PROCCMS system.</p>
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+          <p><strong>Request ID:</strong> ${savedRequest._id}</p>
+          <p><strong>Requested By:</strong> ${username}</p>
+          <p><strong>Department:</strong> ${department}</p>
+          <p><strong>Request Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
+          <p><strong>Description:</strong> ${description}</p>
+          <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
+          <p><strong>Submission Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+        </div>
+        <p>Please review and assign this request to appropriate staff member.</p>
       `;
+
       await sendStatusMail({
         to: "sandraps@jecc.ac.in",
-        subject: "📋 New Repair Request Created - PMS",
-        text: `New repair request by ${username} (${department})`,
-        html: getEmailTemplate("New Repair Request", emailContent),
+        subject: "📋 New Repair Request Created - PROCCMS",
+        text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
+        html: getEmailTemplate("New Repair Request Created", emailContent)
       });
-      console.log("📧 Email sent successfully");
-    } catch (mailErr) {
-      console.error("⚠️ Email sending failed:", mailErr.message);
+    } catch (emailError) {
+      console.error("Failed to send creation email:", emailError.message);
+      // Don't fail the request if email fails
     }
 
-    res.status(201).json({ message: "Repair request submitted successfully", id: savedRequest._id });
+    res.status(201).json(savedRequest);
   } catch (err) {
-    console.error("❌ Error creating repair request:", err);
-    res.status(500).json({ message: err.message || "Internal Server Error" });
+    console.error("Error creating repair request:", err);
+    res.status(500).json({ message: err.message });
   }
-});
+})
 
 // import express from "express";
 // import multer from "multer";
@@ -211,14 +236,14 @@ router.post("/", upload.single("file"), async (req, res) => {
 //     <body>
 //       <div class="container">
 //         <div class="header">
-//           <h2>PMS - JECC Maintenance System</h2>
+//           <h2>PROCCMS - JECC Maintenance System</h2>
 //         </div>
 //         <div class="content">
 //           <h3>${title}</h3>
 //           ${content}
 //         </div>
 //         <div class="footer">
-//           <p>This is an automated email from PMS (Project Office Computerized Complaint Management System).</p>
+//           <p>This is an automated email from PROCCMS (Project Office Computerized Complaint Management System).</p>
 //           <p>Please do not reply to this email. Contact the project office for assistance.</p>
 //         </div>
 //       </div>
@@ -253,7 +278,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 //     // ✅ Send email to project when new request is created
 //     try {
 //       const emailContent = `
-//         <p>A new repair request has been submitted through the PMS system.</p>
+//         <p>A new repair request has been submitted through the PROCCMS system.</p>
 //         <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
 //           <p><strong>Request ID:</strong> ${savedRequest._id}</p>
 //           <p><strong>Requested By:</strong> ${username}</p>
@@ -268,7 +293,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 
 //       await sendStatusMail({
 //         to: "sandraps@jecc.ac.in",
-//         subject: "📋 New Repair Request Created - PMS",
+//         subject: "📋 New Repair Request Created - PROCCMS",
 //         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
 //         html: getEmailTemplate("New Repair Request Created", emailContent)
 //       });
@@ -400,12 +425,12 @@ router.patch("/:id", async (req, res) => {
             <p><strong>Priority:</strong> ${existing.priority || "Normal"}</p>
             <p><strong>Status:</strong> <span class="status-badge assigned">Assigned</span></p>
           </div>
-          <p>Please log in to the PMS system to update the status and add remarks.</p>
+          <p>Please log in to the PROCCMS system to update the status and add remarks.</p>
         `;
 
         await sendStatusMail({
           to: staff.email,
-          subject: "📌 Repair Request Assigned to You - PMS",
+          subject: "📌 Repair Request Assigned to You - PROCCMS",
           text: `Dear ${staff.name}, repair request ${existing._id} has been assigned to you.`,
           html: getEmailTemplate("Repair Request Assigned", staffEmailContent)
         });
@@ -425,7 +450,7 @@ router.patch("/:id", async (req, res) => {
 
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "👤 Repair Request Assigned - PMS",
+          subject: "👤 Repair Request Assigned - PROCCMS",
           text: `Repair request ${existing._id} assigned to ${staff.name}.`,
           html: getEmailTemplate("Repair Request Assigned", projectEmailContent)
         });
@@ -446,7 +471,7 @@ router.patch("/:id", async (req, res) => {
 
           await sendStatusMail({
             to: existing.email,
-            subject: "🔄 Repair Request Assigned - PMS",
+            subject: "🔄 Repair Request Assigned - PROCCMS",
             text: `Your repair request has been assigned to ${staff.name}.`,
             html: getEmailTemplate("Request Assigned to Staff", requesterEmailContent)
           });
@@ -477,7 +502,7 @@ router.patch("/:id", async (req, res) => {
         completionEmails.push(
           sendStatusMail({
             to: existing.email,
-            subject: "✅ Repair Request Completed - PMS",
+            subject: "✅ Repair Request Completed - PROCCMS",
             text: `Your repair request ${existing._id} has been completed.`,
             html: getEmailTemplate("Repair Request Completed", requesterCompletionContent)
           })
@@ -502,7 +527,7 @@ router.patch("/:id", async (req, res) => {
       completionEmails.push(
         sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "✅ Repair Request Completed - PMS",
+          subject: "✅ Repair Request Completed - PROCCMS",
           text: `Repair request ${existing._id} completed by ${existing.assignedTo}.`,
           html: getEmailTemplate("Repair Request Completed", projectCompletionContent)
         })
@@ -554,7 +579,7 @@ router.patch('/:id/verify', async (req, res) => {
         // Email to project office
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "✅ Repair Request Verified - PMS",
+          subject: "✅ Repair Request Verified - PROCCMS",
           text: `Repair request ${existing._id} verified by admin.`,
           html: getEmailTemplate("Repair Request Verified", verificationContent)
         });
@@ -570,12 +595,12 @@ router.patch('/:id/verify', async (req, res) => {
               <p><strong>Verified Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
               <p><strong>Status:</strong> <span class="status-badge verified">Verified & Closed</span></p>
             </div>
-            <p>Thank you for using PMS services.</p>
+            <p>Thank you for using PROCCMS services.</p>
           `;
 
           await sendStatusMail({
             to: existing.email,
-            subject: "✅ Repair Request Verified - PMS",
+            subject: "✅ Repair Request Verified - PROCCMS",
             text: `Your repair request ${existing._id} has been verified.`,
             html: getEmailTemplate("Request Verified", requesterVerificationContent)
           });
@@ -636,12 +661,12 @@ router.post('/:id/remarks', async (req, res) => {
               <p><strong>Added By:</strong> ${enteredBy}</p>
               <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
             </div>
-            <p>Please log in to the PMS system to view details and respond if needed.</p>
+            <p>Please log in to the PROCCMS system to view details and respond if needed.</p>
           `;
 
           await sendStatusMail({
             to: request.email,
-            subject: "💬 New Remark Added to Your Repair Request - PMS",
+            subject: "💬 New Remark Added to Your Repair Request - PROCCMS",
             text: `A new remark has been added to your repair request (ID: ${request._id}) by ${enteredBy}. Remark: ${text}`,
             html: getEmailTemplate("New Remark Added", adminRemarkContent)
           });
@@ -664,7 +689,7 @@ router.post('/:id/remarks', async (req, res) => {
 
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "💬 Remark Added to Repair Request - PMS",
+          subject: "💬 Remark Added to Repair Request - PROCCMS",
           text: `A remark was added to request ${request._id} by ${enteredBy}.`,
           html: getEmailTemplate("Remark Added to Request", projectRemarkContent)
         });
@@ -682,12 +707,12 @@ router.post('/:id/remarks', async (req, res) => {
             <p><strong>Added By:</strong> ${enteredBy}</p>
             <p><strong>Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
           </div>
-          <p>Please review this remark in the PMS system.</p>
+          <p>Please review this remark in the PROCCMS system.</p>
         `;
 
         await sendStatusMail({
           to: "sandraps@jecc.ac.in",
-          subject: "💬 User Added Remark to Repair Request - PMS",
+          subject: "💬 User Added Remark to Repair Request - PROCCMS",
           text: `User ${request.username} added a remark to their request ${request._id}.`,
           html: getEmailTemplate("User Remark Added", userRemarkContent)
         });
@@ -698,7 +723,7 @@ router.post('/:id/remarks', async (req, res) => {
           if (staff?.email) {
             await sendStatusMail({
               to: staff.email,
-              subject: "💬 User Added Remark to Assigned Request - PMS",
+              subject: "💬 User Added Remark to Assigned Request - PROCCMS",
               text: `User ${request.username} added a remark to request ${request._id} which is assigned to you.`,
               html: getEmailTemplate("User Remark Added to Your Request", userRemarkContent)
             });
