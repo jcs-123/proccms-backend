@@ -1,67 +1,104 @@
 import express from "express";
 import multer from "multer";
-import { CloudinaryStorage } from "multer-storage-cloudinary";
+import path from "path";
+import { fileURLToPath } from "url";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
-import cloudinary from "../utils/cloudinary.js";
+import fs from "fs";
 
 const router = express.Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-// =================== MULTER CLOUDINARY STORAGE ===================
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder: "pms_uploads", // Folder name in Cloudinary
-    allowed_formats: ["jpg", "jpeg", "png", "gif", "pdf", "doc", "docx"],
-    resource_type: "auto",
+// ✅ Use the same uploads directory as in server.js
+const uploadsDir = path.join(__dirname, "../uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
+  console.log("✅ Created uploads directory in routes:", uploadsDir);
+}
+
+// Multer config for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    // Use the same uploads directory as in server.js
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    // Create a unique filename with original extension
+    const ext = path.extname(file.originalname);
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    cb(null, filename);
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept images and documents
+    if (!file.originalname.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx)$/i)) {
+      return cb(new Error('Only image and document files are allowed!'), false);
+    }
+    cb(null, true);
+  }
+});
 
-// =================== EMAIL TEMPLATE ===================
-const getEmailTemplate = (title, content) => `
-  <!DOCTYPE html>
-  <html>
-  <head>
-    <meta charset="utf-8">
-    <style>
-      body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-      .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-      .header { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; }
-      .content { background: white; padding: 20px; border-radius: 5px; margin-top: 10px; }
-      .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
-      .status-badge { display:inline-block;padding:4px 8px;border-radius:4px;font-weight:bold;font-size:12px;}
-      .pending{background:#fff3cd;color:#856404;}
-      .assigned{background:#d1ecf1;color:#0c5460;}
-      .completed{background:#d4edda;color:#155724;}
-      .verified{background:#e2e3e5;color:#383d41;}
-    </style>
-  </head>
-  <body>
-    <div class="container">
-      <div class="header"><h2>PMS - JECC Maintenance System</h2></div>
-      <div class="content">
-        <h3>${title}</h3>
-        ${content}
+// Email template function for consistency
+const getEmailTemplate = (title, content) => {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; }
+        .content { background: white; padding: 20px; border-radius: 5px; margin-top: 10px; }
+        .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
+        .status-badge { 
+          display: inline-block; 
+          padding: 4px 8px; 
+          border-radius: 4px; 
+          font-weight: bold; 
+          font-size: 12px; 
+        }
+        .pending { background: #fff3cd; color: #856404; }
+        .assigned { background: #d1ecf1; color: #0c5460; }
+        .completed { background: #d4edda; color: #155724; }
+        .verified { background: #e2e3e5; color: #383d41; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h2>PMS - JECC Maintenance System</h2>
+        </div>
+        <div class="content">
+          <h3>${title}</h3>
+          ${content}
+        </div>
+        <div class="footer">
+          <p>This is an automated email from PMS (Project Office Computerized Complaint Management System).</p>
+          <p>Please do not reply to this email. Contact the project office for assistance.</p>
+        </div>
       </div>
-      <div class="footer">
-        <p>This is an automated email from PMS (Project Office Computerized Complaint Management System).</p>
-        <p>Please do not reply to this email. Contact the project office for assistance.</p>
-      </div>
-    </div>
-  </body>
-  </html>
-`;
+    </body>
+    </html>
+  `;
+};
 
-// =================== CREATE NEW REPAIR REQUEST ===================
+/**
+ * POST - Create new repair request
+ * Accepts optional file upload.
+ */
 router.post("/", upload.single("file"), async (req, res) => {
   try {
     const { username, description, isNewRequirement, role, department, email } = req.body;
-
-    // ✅ Cloudinary URL instead of local path
-    const fileUrl = req.file ? req.file.path : "";
+    const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
 
     const newRequest = new RepairRequest({
       username,
@@ -69,7 +106,7 @@ router.post("/", upload.single("file"), async (req, res) => {
       description,
       isNewRequirement,
       role,
-      email: email || "",
+      email: email || '',
       fileUrl,
       status: "Pending",
       assignedTo: "",
@@ -77,18 +114,30 @@ router.post("/", upload.single("file"), async (req, res) => {
 
     const savedRequest = await newRequest.save();
 
-    // ✅ Send email to project
+    // ✅ Set file permissions after saving
+    if (req.file) {
+      const filePath = path.join(uploadsDir, req.file.filename);
+      fs.chmod(filePath, 0o755, (err) => {
+        if (err) {
+          console.error("Error setting file permissions:", err);
+        } else {
+          console.log("File permissions set successfully");
+        }
+      });
+    }
+
+    // ✅ Send email to project when new request is created
     try {
       const emailContent = `
         <p>A new repair request has been submitted through the PMS system.</p>
-        <div style="background:#f8f9fa;padding:15px;border-radius:5px;margin:15px 0;">
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
           <p><strong>Request ID:</strong> ${savedRequest._id}</p>
           <p><strong>Requested By:</strong> ${username}</p>
           <p><strong>Department:</strong> ${department}</p>
           <p><strong>Request Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
           <p><strong>Description:</strong> ${description}</p>
           <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
-          <p><strong>Submission Date:</strong> ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</p>
+          <p><strong>Submission Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
         </div>
         <p>Please review and assign this request to appropriate staff member.</p>
       `;
@@ -97,31 +146,188 @@ router.post("/", upload.single("file"), async (req, res) => {
         to: "project@jecc.ac.in",
         subject: "📋 New Repair Request Created - PMS",
         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
-        html: getEmailTemplate("New Repair Request Created", emailContent),
+        html: getEmailTemplate("New Repair Request Created", emailContent)
       });
     } catch (emailError) {
-      console.error("⚠️ Failed to send email:", emailError.message);
+      console.error("Failed to send creation email:", emailError.message);
+      // Don't fail the request if email fails
     }
 
     res.status(201).json(savedRequest);
   } catch (err) {
-    console.error("❌ Error creating repair request:", err);
+    console.error("Error creating repair request:", err);
     res.status(500).json({ message: err.message });
   }
-});
+})
 
-// =================== GET ALL REQUESTS ===================
+// import express from "express";
+// import multer from "multer";
+// import path from "path";
+// import { fileURLToPath } from "url";
+// import RepairRequest from "../models/RepairRequest.js";
+// import { sendStatusMail } from "../utils/mailer.js";
+// import Staff from "../models/Staff.js";
+// import fs from "fs";
+
+// const router = express.Router();
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
+
+// // ✅ CRITICAL: Ensure uploads directory exists
+// const uploadsDir = path.join(__dirname, "../uploads");
+// if (!fs.existsSync(uploadsDir)) {
+//   fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
+//   console.log("✅ Created uploads directory in routes:", uploadsDir);
+// }
+
+// // Multer config for file uploads
+// const storage = multer.diskStorage({
+//   destination: (req, file, cb) => {
+//     // Use the same uploads directory as in server.js
+//     cb(null, uploadsDir);
+//   },
+//   filename: (req, file, cb) => {
+//     // Create a unique filename with original extension
+//     const ext = path.extname(file.originalname);
+//     const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+//     cb(null, filename);
+//   },
+// });
+
+// const upload = multer({
+//   storage,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024, // 5MB limit
+//   },
+//   fileFilter: (req, file, cb) => {
+//     // Accept images only
+//     if (!file.originalname.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx)$/)) {
+//       return cb(new Error('Only image and document files are allowed!'), false);
+//     }
+//     cb(null, true);
+//   }
+// });
+// // Email template function for consistency
+// const getEmailTemplate = (title, content) => {
+//   return `
+//     <!DOCTYPE html>
+//     <html>
+//     <head>
+//       <meta charset="utf-8">
+//       <style>
+//         body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+//         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+//         .header { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; }
+//         .content { background: white; padding: 20px; border-radius: 5px; margin-top: 10px; }
+//         .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
+//         .status-badge { 
+//           display: inline-block; 
+//           padding: 4px 8px; 
+//           border-radius: 4px; 
+//           font-weight: bold; 
+//           font-size: 12px; 
+//         }
+//         .pending { background: #fff3cd; color: #856404; }
+//         .assigned { background: #d1ecf1; color: #0c5460; }
+//         .completed { background: #d4edda; color: #155724; }
+//         .verified { background: #e2e3e5; color: #383d41; }
+//       </style>
+//     </head>
+//     <body>
+//       <div class="container">
+//         <div class="header">
+//           <h2>PMS - JECC Maintenance System</h2>
+//         </div>
+//         <div class="content">
+//           <h3>${title}</h3>
+//           ${content}
+//         </div>
+//         <div class="footer">
+//           <p>This is an automated email from PMS (Project Office Computerized Complaint Management System).</p>
+//           <p>Please do not reply to this email. Contact the project office for assistance.</p>
+//         </div>
+//       </div>
+//     </body>
+//     </html>
+//   `;
+// };
+
+// /**
+//  * POST - Create new repair request
+//  * Accepts optional file upload.
+//  */
+// router.post("/", upload.single("file"), async (req, res) => {
+//   try {
+//     const { username, description, isNewRequirement, role, department, email } = req.body;
+//     const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
+
+//     const newRequest = new RepairRequest({
+//       username,
+//       department,
+//       description,
+//       isNewRequirement,
+//       role,
+//       email: email || '',
+//       fileUrl,
+//       status: "Pending",
+//       assignedTo: "",
+//     });
+
+//     const savedRequest = await newRequest.save();
+
+//     // ✅ Send email to project when new request is created
+//     try {
+//       const emailContent = `
+//         <p>A new repair request has been submitted through the PMS system.</p>
+//         <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+//           <p><strong>Request ID:</strong> ${savedRequest._id}</p>
+//           <p><strong>Requested By:</strong> ${username}</p>
+//           <p><strong>Department:</strong> ${department}</p>
+//           <p><strong>Request Type:</strong> ${isNewRequirement ? "New Requirement" : "Repair Request"}</p>
+//           <p><strong>Description:</strong> ${description}</p>
+//           <p><strong>Status:</strong> <span class="status-badge pending">Pending</span></p>
+//           <p><strong>Submission Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+//         </div>
+//         <p>Please review and assign this request to appropriate staff member.</p>
+//       `;
+
+//       await sendStatusMail({
+//         to: "project@jecc.ac.in",
+//         subject: "📋 New Repair Request Created - PMS",
+//         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
+//         html: getEmailTemplate("New Repair Request Created", emailContent)
+//       });
+//     } catch (emailError) {
+//       console.error("Failed to send creation email:", emailError.message);
+//       // Don't fail the request if email fails
+//     }
+
+//     res.status(201).json(savedRequest);
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// });
+
+/**
+ * GET - Fetch repair requests based on user role
+ * Admin: gets all
+ * Staff: gets assignedTo=username
+ * User: gets their own requests
+ */
 router.get("/", async (req, res) => {
   const { username, role, department, search, status, assignedTo, dateFrom, dateTo } = req.query;
+
   let filter = {};
 
   if (role === "user") {
     filter.username = username;
     filter.department = department;
   } else if (role === "staff") {
-    filter.$or = [{ assignedTo: username }, { username }];
+    filter.$or = [
+      { assignedTo: username },
+      { username: username }
+    ];
   }
-
   if (search) {
     filter.$or = [
       { username: { $regex: search, $options: "i" } },
@@ -130,15 +336,22 @@ router.get("/", async (req, res) => {
     ];
   }
 
-  if (status) filter.status = status;
-  if (assignedTo) filter.assignedTo = assignedTo;
+  if (status) {
+    filter.status = status;
+  }
+
+  if (assignedTo) {
+    filter.assignedTo = assignedTo;
+  }
 
   if (dateFrom || dateTo) {
     filter.createdAt = {};
-    if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+    if (dateFrom) {
+      filter.createdAt.$gte = new Date(dateFrom);
+    }
     if (dateTo) {
       const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
+      end.setHours(23, 59, 59, 999); // include entire day
       filter.createdAt.$lte = end;
     }
   }
