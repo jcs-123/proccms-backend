@@ -1,50 +1,30 @@
 import express from "express";
 import multer from "multer";
-import path from "path";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
 import { fileURLToPath } from "url";
+import path from "path";
+import fs from "fs";
 import RepairRequest from "../models/RepairRequest.js";
 import { sendStatusMail } from "../utils/mailer.js";
 import Staff from "../models/Staff.js";
-import fs from "fs";
+import cloudinary from "../utils/cloudinary.js";
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ✅ Use the same uploads directory as in server.js
-const uploadsDir = path.join(__dirname, "../uploads");
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true, mode: 0o755 });
-  console.log("✅ Created uploads directory in routes:", uploadsDir);
-}
-
-// Multer config for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // Use the same uploads directory as in server.js
-    cb(null, uploadsDir);
-  },
-  filename: (req, file, cb) => {
-    // Create a unique filename with original extension
-    const ext = path.extname(file.originalname);
-    const filename = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
-    cb(null, filename);
+// =================== MULTER CLOUDINARY STORAGE ===================
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "pms_uploads", // your folder name in Cloudinary
+    allowed_formats: ["jpg", "jpeg", "png", "gif", "pdf", "doc", "docx"],
+    resource_type: "auto",
   },
 });
 
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-  fileFilter: (req, file, cb) => {
-    // Accept images and documents
-    if (!file.originalname.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx)$/i)) {
-      return cb(new Error('Only image and document files are allowed!'), false);
-    }
-    cb(null, true);
-  }
-});
+const upload = multer({ storage });
+
 
 // Email template function for consistency
 const getEmailTemplate = (title, content) => {
