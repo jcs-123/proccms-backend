@@ -143,7 +143,7 @@ router.post("/", upload.single("file"), async (req, res) => {
       `;
 
       await sendStatusMail({
-        to: "sandraps@jecc.ac.in",
+        to: "project@jecc.ac.in",
         subject: "📋 New Repair Request Created - PROCCMS",
         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
         html: getEmailTemplate("New Repair Request Created", emailContent)
@@ -292,7 +292,7 @@ router.post("/", upload.single("file"), async (req, res) => {
 //       `;
 
 //       await sendStatusMail({
-//         to: "sandraps@jecc.ac.in",
+//         to: "project@jecc.ac.in",
 //         subject: "📋 New Repair Request Created - PROCCMS",
 //         text: `A new repair request has been created by ${username} from ${department}. Request ID: ${savedRequest._id}`,
 //         html: getEmailTemplate("New Repair Request Created", emailContent)
@@ -449,7 +449,7 @@ router.patch("/:id", async (req, res) => {
         `;
 
         await sendStatusMail({
-          to: "sandraps@jecc.ac.in",
+          to: "project@jecc.ac.in",
           subject: "👤 Repair Request Assigned - PROCCMS",
           text: `Repair request ${existing._id} assigned to ${staff.name}.`,
           html: getEmailTemplate("Repair Request Assigned", projectEmailContent)
@@ -526,7 +526,7 @@ router.patch("/:id", async (req, res) => {
 
       completionEmails.push(
         sendStatusMail({
-          to: "sandraps@jecc.ac.in",
+          to: "project@jecc.ac.in",
           subject: "✅ Repair Request Completed - PROCCMS",
           text: `Repair request ${existing._id} completed by ${existing.assignedTo}.`,
           html: getEmailTemplate("Repair Request Completed", projectCompletionContent)
@@ -578,7 +578,7 @@ router.patch('/:id/verify', async (req, res) => {
 
         // Email to project office
         await sendStatusMail({
-          to: "sandraps@jecc.ac.in",
+          to: "project@jecc.ac.in",
           subject: "✅ Repair Request Verified - PROCCMS",
           text: `Repair request ${existing._id} verified by admin.`,
           html: getEmailTemplate("Repair Request Verified", verificationContent)
@@ -688,7 +688,7 @@ router.post('/:id/remarks', async (req, res) => {
         `;
 
         await sendStatusMail({
-          to: "sandraps@jecc.ac.in",
+          to: "project@jecc.ac.in",
           subject: "💬 Remark Added to Repair Request - PROCCMS",
           text: `A remark was added to request ${request._id} by ${enteredBy}.`,
           html: getEmailTemplate("Remark Added to Request", projectRemarkContent)
@@ -711,7 +711,7 @@ router.post('/:id/remarks', async (req, res) => {
         `;
 
         await sendStatusMail({
-          to: "sandraps@jecc.ac.in",
+          to: "project@jecc.ac.in",
           subject: "💬 User Added Remark to Repair Request - PROCCMS",
           text: `User ${request.username} added a remark to their request ${request._id}.`,
           html: getEmailTemplate("User Remark Added", userRemarkContent)
