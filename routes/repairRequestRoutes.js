@@ -78,7 +78,8 @@ const getEmailTemplate = (title, content) => {
 router.post("/", upload.single("file"), async (req, res) => {
   try {
     const { username, description, isNewRequirement, role, department, email } = req.body;
-    const fileUrl = req.file ? `/uploads/${req.file.filename}` : "";
+    const fileUrl = req.file ? req.file.path : "";
+
 
     const newRequest = new RepairRequest({
       username,
