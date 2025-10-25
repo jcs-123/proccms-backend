@@ -92,6 +92,28 @@ export const resetPassword = async (req, res) => {
 
 
 
+export const verifyToken = async (req, res) => {
+  try {
+    const token = req.headers.authorization;
+
+    // 🔹 Simple static token check (since you’re not using JWT)
+    if (token === "admin-token") {
+      return res.status(200).json({ valid: true, role: "admin" });
+    }
+    if (token === "staff-token") {
+      return res.status(200).json({ valid: true, role: "staff" });
+    }
+    if (token === "user-token") {
+      return res.status(200).json({ valid: true, role: "user" });
+    }
+
+    // ❌ Token not valid
+    return res.status(401).json({ valid: false });
+  } catch (error) {
+    console.error("🔥 Token verify error:", error);
+    return res.status(500).json({ valid: false });
+  }
+};
 
 
 // import User from '../models/User.js';

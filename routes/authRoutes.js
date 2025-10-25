@@ -1,10 +1,16 @@
-import express from 'express';
-import { login, resetPassword } from '../controllers/authController.js';
+import express from "express";
+import { login, resetPassword, verifyToken } from "../controllers/authController.js";
 
 const router = express.Router();
 
-router.post('/login', login);
-router.put('/reset-password', resetPassword);
+// ✅ Login
+router.post("/login", login);
+
+// ✅ Reset password
+router.put("/reset-password", resetPassword);
+
+// ✅ Verify token for every system login check
+router.get("/verify", verifyToken);
 
 export default router;
 
