@@ -4,6 +4,7 @@ import RoomBooking from '../models/RoomBooking.js';
 const router = express.Router();
 
 // POST - Create a new booking
+// POST - Create a new booking
 router.post('/', async (req, res) => {
   try {
     const {
@@ -13,27 +14,28 @@ router.post('/', async (req, res) => {
       timeTo,
     } = req.body;
 
-    // Combine date and time strings into full datetime strings
+    // Convert formatted times to proper Date objects
     const fromTime = new Date(`${date} ${timeFrom}`);
     const toTime = new Date(`${date} ${timeTo}`);
 
-    // Check for overlapping bookings
-    const existingBooking = await RoomBooking.findOne({
-      roomType,
-      date,
-      $or: [
-        {
-          timeFrom: { $lt: timeTo },
-          timeTo: { $gt: timeFrom },
-        },
-      ],
+    // Fetch existing bookings for the same room and date
+    const existingBookings = await RoomBooking.find({ roomType, date });
+
+    // Check overlap with any existing booking
+    const isOverlap = existingBookings.some(b => {
+      const existingFrom = new Date(`${b.date} ${b.timeFrom}`);
+      const existingTo = new Date(`${b.date} ${b.timeTo}`);
+      // overlap if ranges intersect
+      return fromTime < existingTo && toTime > existingFrom;
     });
 
-    if (existingBooking) {
-      return res.status(409).json({ message: 'Room already booked for the selected time range.' });
+    if (isOverlap) {
+      return res.status(409).json({
+        message: 'Room already booked during the selected time range.',
+      });
     }
 
-    // Save new booking
+    // Save booking
     const newBooking = new RoomBooking(req.body);
     await newBooking.save();
 
@@ -43,6 +45,7 @@ router.post('/', async (req, res) => {
     res.status(500).json({ message: 'Something went wrong' });
   }
 });
+
 
 // GET - All bookings (admin use)
 // GET - All bookings (admin or filtered user)
