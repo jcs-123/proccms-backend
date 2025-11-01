@@ -545,6 +545,7 @@ router.patch("/:id", async (req, res) => {
 });
 
 // Verification endpoint
+// ✅ Verification endpoint (email only to project, not to user)
 router.patch('/:id/verify', async (req, res) => {
   try {
     const existing = await RepairRequest.findById(req.params.id);
@@ -558,65 +559,53 @@ router.patch('/:id/verify', async (req, res) => {
       { new: true }
     );
 
-    // ✅ Send email notification when request is verified
+    // ✅ Send email only to Project Office (user mail removed)
     if (req.body.isVerified && !existing.isVerified) {
       try {
         const verificationContent = `
-          <p>A repair request has been verified by the administration.</p>
+          <p>A repair request has been verified by the <strong>user</strong> after completion.</p>
           <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
             <p><strong>Request ID:</strong> ${existing._id}</p>
             <p><strong>Requested By:</strong> ${existing.username}</p>
             <p><strong>Department:</strong> ${existing.department}</p>
             <p><strong>Description:</strong> ${existing.description}</p>
             <p><strong>Completed By:</strong> ${existing.assignedTo || "Technical Staff"}</p>
-            <p><strong>Completion Date:</strong> ${existing.completedAt ? new Date(existing.completedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : "N/A"}</p>
-            <p><strong>Verification Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
+            <p><strong>Completion Date:</strong> ${existing.completedAt
+            ? new Date(existing.completedAt).toLocaleString("en-IN", {
+              timeZone: "Asia/Kolkata",
+            })
+            : "N/A"
+          }</p>
+            <p><strong>Verification Date:</strong> ${new Date().toLocaleString(
+            "en-IN",
+            { timeZone: "Asia/Kolkata" }
+          )}</p>
             <p><strong>Status:</strong> <span class="status-badge verified">Verified</span></p>
           </div>
           <p>This request is now closed in the system.</p>
         `;
 
-        // Email to project office
+        // ✅ Only send to project office
         await sendStatusMail({
           to: "project@jecc.ac.in",
           subject: "✅ Repair Request Verified - PROCCMS",
-          text: `Repair request ${existing._id} verified by admin.`,
-          html: getEmailTemplate("Repair Request Verified", verificationContent)
+          text: `Repair request ${existing._id} verified by user.`,
+          html: getEmailTemplate("Repair Request Verified", verificationContent),
         });
 
-        // Optional: Notify the requester
-        if (existing.email) {
-          const requesterVerificationContent = `
-            <p>Dear <strong>${existing.username}</strong>,</p>
-            <p>Your repair request has been verified by the administration and is now closed.</p>
-            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
-              <p><strong>Request ID:</strong> ${existing._id}</p>
-              <p><strong>Description:</strong> ${existing.description}</p>
-              <p><strong>Verified Date:</strong> ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</p>
-              <p><strong>Status:</strong> <span class="status-badge verified">Verified & Closed</span></p>
-            </div>
-            <p>Thank you for using PROCCMS services.</p>
-          `;
-
-          await sendStatusMail({
-            to: existing.email,
-            subject: "✅ Repair Request Verified - PROCCMS",
-            text: `Your repair request ${existing._id} has been verified.`,
-            html: getEmailTemplate("Request Verified", requesterVerificationContent)
-          });
-        }
-
-        console.log("Verification email sent successfully");
+        console.log(`Verification email sent to project for ${existing._id}`);
       } catch (emailError) {
-        console.error("Failed to send verification email:", emailError.message);
+        console.error("Failed to send project verification email:", emailError.message);
       }
     }
 
     res.json(updated);
   } catch (err) {
+    console.error("Verification update failed:", err);
     res.status(500).json({ message: err.message });
   }
 });
+
 
 // Add remarks to a repair request
 // Add remarks to a repair request with email notifications
@@ -806,5 +795,27 @@ router.patch('/:requestId/remarks/:remarkId/mark-seen', async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+
+// ✅ User verifies their completed request
+const handleVerify = async (id) => {
+  try {
+    const res = await fetch(
+      `https://proccms-backend.onrender.com/api/repair-requests/${id}/verify`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isVerified: true }),
+      }
+    );
+
+    if (!res.ok) throw new Error("Verification failed");
+
+    toast.success("Request verified successfully!");
+    fetchRequests(); // Refresh table
+  } catch (err) {
+    toast.error("Error verifying request: " + err.message);
+  }
+};
 
 export default router;
